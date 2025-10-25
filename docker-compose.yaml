@@ -1,0 +1,85 @@
+services:
+  nginx:
+    image: nginx:1.25.3
+    container_name: cloud-file-manager-nginx
+    restart: unless-stopped
+    volumes:
+      - ./logs/nginx:/var/log/nginx
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - cloud_file_manager_network
+
+  postgres:
+    image: postgres:15
+    container_name: cloud-file-manager-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - cloud_file_manager_postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cloudfilemanager"]
+    networks:
+      - cloud_file_manager_network
+
+  redis:
+    image: redis:7.2.5
+    container_name: cloud-file-manager-redis
+    restart: always
+    volumes:
+      - cloud_file_manager_redis_dev_data:/data
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+    networks:
+      - cloud_file_manager_network
+
+  backend:
+    image: node:22-alpine
+    container_name: cloud-file-manager-backend
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      - CHOKIDAR_USEPOLLING=1
+      - WATCHPACK_POLLING=true
+    command: sh -lc "npm install && npm run start:dev"
+    volumes:
+      - ./logs/cloud-file-manager-backend:/app/log
+      - ./cloud-file-manager-backend:/app
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+      start_interval: 5s
+    networks:
+      - cloud_file_manager_network
+
+
+networks:
+  cloud_file_manager_network:
+    driver: bridge
+
+volumes:
+  cloud_file_manager_postgres_dev_data:
+  cloud_file_manager_redis_dev_data:

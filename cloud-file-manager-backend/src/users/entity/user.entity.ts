@@ -1,0 +1,49 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+
+export enum UserRole {
+  ADMIN = 'Admin',
+  MEMBER = 'Member',
+}
+
+@Entity('users')
+export class User {
+  @PrimaryGeneratedColumn()
+  @ApiProperty({ description: 'id' })
+  id: number;
+
+  @Column({ unique: true })
+  @ApiProperty({
+    description: 'User email',
+    example: 'johndoe@test.com',
+    type: 'string',
+    format: 'email',
+  })
+  email: string;
+
+  @Column()
+  password: string;
+
+  @Column()
+  @ApiProperty({
+    example: 'John Doe',
+    description: 'User name',
+    type: 'string',
+  })
+  name: string;
+
+  @Column({
+    type: 'enum',
+    enum: UserRole,
+    default: UserRole.MEMBER,
+  })
+  @ApiProperty({
+    example: 'Member',
+    description: 'User role: Admin or Member',
+    type: 'string',
+  })
+  role: UserRole;
+
+  @Column({ type: 'text', nullable: true })
+  currentHashedRefreshToken?: string | null;
+}
