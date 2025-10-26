@@ -6,13 +6,36 @@ import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 import { User, UserRole } from '../src/users/entity/user.entity';
 import { join } from 'path';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { createWriteStream, existsSync, mkdirSync } from 'fs';
+import {
+  FileUpload,
+  FileUploadStatus,
+} from '../src/files/entities/file-upload.entity';
+import { S3Client, HeadObjectCommand } from '@aws-sdk/client-s3';
+
+const createS3Client = () => {
+  const region = process.env.AWS_REGION ?? 'ap-northeast-2';
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+  return new S3Client({
+    region,
+    credentials:
+      accessKeyId && secretAccessKey
+        ? {
+            accessKeyId,
+            secretAccessKey,
+          }
+        : undefined,
+  });
+};
 
 describe('AppController (e2e)', () => {
   let app: INestApplication;
   let adminToken: string;
   let adminId: string;
   let memberToken: string;
+
+  process.env.MAX_UPLOAD_BYTES = String(200 * 1024 * 1024);
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -55,28 +78,59 @@ describe('AppController (e2e)', () => {
     let memberId: string;
     let uploadedFileId: string;
     let secondFileId: string;
-    const resolveSampleFile = (filename: string) => {
-      const rootPath = join(__dirname, '..');
-      const primaryPath = join(rootPath, 'test', 'test-data', filename);
-      if (existsSync(primaryPath)) {
-        return primaryPath;
+    let uploadedLargeFileId: string;
+    const bucketName =
+      process.env.FILES_BUCKET_NAME ?? 'cloud-file-manager-user-files-dev';
+    const resolveSampleFile = (filename: string, fallbackSizeBytes = 1024) => {
+      const repoRoot = join(__dirname, '..', '..');
+      const potentialPaths = [
+        join(__dirname, 'test-data', filename),
+        join(repoRoot, 'test', 'test-data', filename),
+        join(
+          repoRoot,
+          'cloud-file-manager-backend',
+          'test',
+          'test-data',
+          filename,
+        ),
+      ];
+      for (const candidate of potentialPaths) {
+        if (existsSync(candidate)) {
+          return candidate;
+        }
       }
-      const fallbackDir = join(rootPath, 'tmp-test-files');
+      const fallbackDir = join(repoRoot, 'tmp-test-files');
       if (!existsSync(fallbackDir)) {
         mkdirSync(fallbackDir, { recursive: true });
       }
       const fallbackPath = join(fallbackDir, filename);
       if (!existsSync(fallbackPath)) {
-        writeFileSync(
-          fallbackPath,
-          'timestamp,value\n2025-01-01T00:00:00Z,1\n2025-01-02T00:00:00Z,2\n',
-        );
+        const stream = createWriteStream(fallbackPath);
+        stream.write('timestamp,value\n');
+        const row = '2025-01-01T00:00:00Z,1\n';
+        let written = row.length;
+        while (written < fallbackSizeBytes) {
+          stream.write(row);
+          written += row.length;
+        }
+        stream.end();
       }
       return fallbackPath;
     };
 
     const sampleFileSmall = resolveSampleFile('health_data_small.csv');
-    const sampleFileMedium = resolveSampleFile('health_data_medium.csv');
+    const sampleFileMedium = resolveSampleFile(
+      'health_data_medium.csv',
+      35 * 1024 * 1024,
+    );
+    const sampleFileLarge = resolveSampleFile(
+      'health_data_large.csv',
+      117 * 1024 * 1024,
+    );
+    const sampleFileExtraLarge = resolveSampleFile(
+      'health_data_xlarge.csv',
+      586 * 1024 * 1024,
+    );
 
     it('POST /signup (Admin)', async () => {
       return request(app.getHttpServer() as App)
@@ -231,15 +285,39 @@ describe('AppController (e2e)', () => {
           });
       });
 
+      it('POST /files (upload large csv via multipart streaming)', async () => {
+        return request(app.getHttpServer() as App)
+          .post('/files')
+          .set('Authorization', `Bearer ${memberToken}`)
+          .attach('files', sampleFileLarge)
+          .expect(201)
+          .then((res) => {
+            expect(Array.isArray(res.body.data)).toBeTruthy();
+            expect(res.body.data).toHaveLength(1);
+            uploadedLargeFileId = res.body.data[0].id;
+          });
+      }, 20000);
+
+      it('POST /files (upload extra large csv via multipart streaming)', async () => {
+        return request(app.getHttpServer() as App)
+          .post('/files')
+          .set('Authorization', `Bearer ${memberToken}`)
+          .attach('files', sampleFileExtraLarge)
+          .expect(413);
+      });
+
       it('GET /files (list uploaded files)', async () => {
         return request(app.getHttpServer() as App)
           .get('/files')
           .set('Authorization', `Bearer ${memberToken}`)
           .expect(200)
           .then((res) => {
-            expect(res.body.meta.total).toBeGreaterThanOrEqual(2);
+            expect(res.body.meta.total).toBeGreaterThanOrEqual(3);
             expect(
               res.body.data.find((file) => file.id === uploadedFileId),
+            ).toBeDefined();
+            expect(
+              res.body.data.find((file) => file.id === uploadedLargeFileId),
             ).toBeDefined();
           });
       });
@@ -255,15 +333,50 @@ describe('AppController (e2e)', () => {
           });
       });
 
-      it('DELETE /files/:id (soft delete)', async () => {
+      it('GET /files/:id/download (presigned url for large file)', async () => {
         return request(app.getHttpServer() as App)
-          .delete(`/files/${secondFileId}`)
+          .get(`/files/${uploadedLargeFileId}/download`)
           .set('Authorization', `Bearer ${memberToken}`)
           .expect(200)
           .then((res) => {
-            expect(res.body.code).toEqual('FILE_SOFT_DELETED');
+            expect(res.body.url).toContain('https://');
+            expect(res.body.expiresAt).toBeDefined();
           });
       });
+    });
+
+    it('DELETE /files/:id (soft delete) after uploads)', async () => {
+      const dataSource = app.get(DataSource);
+      const fileRepo = dataSource.getRepository(FileUpload);
+      const fileBefore = await fileRepo.findOne({
+        where: { id: secondFileId },
+      });
+      expect(fileBefore).toBeDefined();
+
+      await request(app.getHttpServer() as App)
+        .delete(`/files/${secondFileId}`)
+        .set('Authorization', `Bearer ${memberToken}`)
+        .expect(200)
+        .then((res) => {
+          expect(res.body.code).toEqual('FILE_SOFT_DELETED');
+        });
+
+      const deletedFile = await fileRepo.findOne({
+        where: { id: secondFileId },
+      });
+      expect(deletedFile?.status).toEqual(FileUploadStatus.SOFT_DELETED);
+
+      if (bucketName) {
+        const s3Client = createS3Client();
+        await expect(
+          s3Client.send(
+            new HeadObjectCommand({
+              Bucket: bucketName,
+              Key: deletedFile!.s3Key,
+            }),
+          ),
+        ).resolves.toBeDefined();
+      }
     });
 
     it('DELETE /users/:id (Unauthorized user tries to delete another user) -> 401 Unauthorized', async () => {
@@ -284,6 +397,13 @@ describe('AppController (e2e)', () => {
       return request(app.getHttpServer() as App)
         .delete(`/users/${memberId}`)
         .set('Authorization', `Bearer ${memberToken}`)
+        .expect(200);
+    });
+
+    it('DELETE /users/:id (Admin deletes self)', async () => {
+      return request(app.getHttpServer() as App)
+        .delete(`/users/${adminId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
     });
   });

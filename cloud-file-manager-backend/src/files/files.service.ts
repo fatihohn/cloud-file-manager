@@ -12,15 +12,13 @@ import { Repository } from 'typeorm';
 import { FileUpload, FileUploadStatus } from './entities/file-upload.entity';
 import { User, UserRole } from '../users/entity/user.entity';
 import { FILES_S3_CLIENT } from './files.constants';
-import {
-  GetObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from '@aws-sdk/client-s3';
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID, createHash, createCipheriv, randomBytes } from 'crypto';
 import { LoggerService } from '../logger/logger.service';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createReadStream, promises as fsPromises } from 'fs';
+import { Upload } from '@aws-sdk/lib-storage';
 import { FileUploadResponseDto } from './dto/file-upload-response.dto';
 import { ListFilesQueryDto } from './dto/list-files-query.dto';
 import { PresignedUrlResponseDto } from './dto/presigned-url-response.dto';
@@ -33,6 +31,8 @@ export class FilesService {
   private readonly downloadUrlTtlSeconds: number;
   private readonly encryptionKey: Buffer;
   private readonly allowedMimeTypes = ['text/csv', 'application/vnd.ms-excel'];
+  private readonly uploadPartSize: number;
+  private readonly uploadQueueSize: number;
 
   constructor(
     @InjectRepository(FileUpload)
@@ -52,6 +52,14 @@ export class FilesService {
     );
     this.downloadUrlTtlSeconds = parseInt(
       this.configService.get<string>('FILES_DOWNLOAD_URL_TTL_SECONDS', '60'),
+      10,
+    );
+    this.uploadPartSize = parseInt(
+      this.configService.get<string>('FILES_MULTIPART_PART_SIZE', '8388608'),
+      10,
+    );
+    this.uploadQueueSize = parseInt(
+      this.configService.get<string>('FILES_MULTIPART_QUEUE', '4'),
       10,
     );
     const encryptionKeyBase64 = this.configService.get<string>(
@@ -160,6 +168,9 @@ export class FilesService {
       Date.now() + this.downloadUrlTtlSeconds * 1000,
     ).toISOString();
 
+    this.logger.log(
+      `Generated download URL for file ${file.id} (owner: ${file.ownerId}): ${url}`,
+    );
     return { url, expiresAt };
   }
 
@@ -181,46 +192,49 @@ export class FilesService {
         message: `File size exceeds limit of ${this.maxUploadBytes} bytes`,
       });
     }
-    const mimeType = (file.mimetype ?? '') as string;
+    const mimeType = file.mimetype ?? '';
     if (!this.allowedMimeTypes.includes(mimeType)) {
       throw new BadRequestException({
         code: 'UNSUPPORTED_FILE_TYPE',
         message: 'Only CSV uploads are supported at this time',
       });
     }
+    if (!file.path) {
+      throw new BadRequestException({
+        code: 'FILE_PATH_MISSING',
+        message: 'File path missing for uploaded file',
+      });
+    }
   }
 
   private async uploadSingle(user: User, file: Express.Multer.File) {
     const s3Key = `${user.id}/${randomUUID()}`;
-    const buffer = file.buffer as Buffer | undefined;
-    if (!buffer) {
+    const filePath = file.path;
+    if (!filePath) {
       throw new InternalServerErrorException({
-        code: 'BUFFER_MISSING',
-        message:
-          'File buffer not available; ensure memory storage is configured',
+        code: 'FILE_PATH_MISSING',
+        message: 'File path not available for upload',
       });
     }
-    const checksum = createHash('sha256').update(buffer).digest('hex');
+    const checksum = await this.computeChecksum(filePath);
     const originalName = String(file.originalname ?? 'file.csv');
     const encryptedName = this.encryptFileName(originalName);
 
     try {
-      await this.s3.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: s3Key,
-          Body: buffer,
-          ContentType: file.mimetype ?? 'application/octet-stream',
-          ContentLength: file.size,
-          ServerSideEncryption: 'AES256',
-        }),
-      );
+      await this.uploadStreamToS3({
+        filePath,
+        s3Key,
+        mimeType: file.mimetype ?? 'application/octet-stream',
+        contentLength: file.size,
+      });
     } catch (error) {
       this.logger.error('S3 upload failed', String(error));
       throw new InternalServerErrorException({
         code: 'S3_UPLOAD_FAILED',
         message: 'Failed to upload file to storage',
       });
+    } finally {
+      await this.removeTempFile(filePath);
     }
 
     const record = this.filesRepository.create({
@@ -277,5 +291,47 @@ export class FilesService {
       createdAt: file.createdAt.toISOString(),
       ownerId: file.ownerId,
     };
+  }
+
+  private async computeChecksum(filePath: string): Promise<string> {
+    const hash = createHash('sha256');
+    await new Promise<void>((resolve, reject) => {
+      createReadStream(filePath)
+        .on('data', (chunk) => hash.update(chunk))
+        .on('end', () => resolve())
+        .on('error', (error) => reject(error));
+    });
+    return hash.digest('hex');
+  }
+
+  private async uploadStreamToS3(options: {
+    filePath: string;
+    s3Key: string;
+    mimeType: string;
+    contentLength: number;
+  }) {
+    const { filePath, s3Key, mimeType, contentLength } = options;
+    const upload = new Upload({
+      client: this.s3,
+      params: {
+        Bucket: this.bucket,
+        Key: s3Key,
+        Body: createReadStream(filePath),
+        ContentType: mimeType,
+        ContentLength: contentLength,
+        ServerSideEncryption: 'AES256',
+      },
+      partSize: this.uploadPartSize,
+      queueSize: this.uploadQueueSize,
+    });
+    await upload.done();
+  }
+
+  private async removeTempFile(filePath: string) {
+    try {
+      await fsPromises.unlink(filePath);
+    } catch (error) {
+      this.logger.warn('Failed to remove temp upload file', String(error));
+    }
   }
 }

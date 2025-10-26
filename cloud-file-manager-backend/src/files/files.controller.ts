@@ -23,7 +23,6 @@ import {
 import { FilesService } from './files.service';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { memoryStorage } from 'multer';
 import { FileUploadResponseDto } from './dto/file-upload-response.dto';
 import { ListFilesQueryDto } from './dto/list-files-query.dto';
 import { PresignedUrlResponseDto } from './dto/presigned-url-response.dto';
@@ -68,11 +67,7 @@ export class FilesController {
       },
     },
   })
-  @UseInterceptors(
-    FilesInterceptor('files', 10, {
-      storage: memoryStorage(),
-    }),
-  )
+  @UseInterceptors(FilesInterceptor('files', 10))
   async uploadFiles(
     @Req() req: { user: User },
     @UploadedFiles() files: Express.Multer.File[],
