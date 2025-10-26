@@ -30,6 +30,6 @@ import { JwtRefreshStrategy } from './jwt-refresh-strategy';
   ],
   providers: [AuthService, JwtStrategy, JwtRefreshStrategy, RolesGuard],
   controllers: [AuthController],
-  exports: [AuthService, PassportModule],
+  exports: [AuthService, PassportModule, JwtModule],
 })
 export class AuthModule {}

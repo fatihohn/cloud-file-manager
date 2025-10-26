@@ -1,4 +1,9 @@
-import { Module } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FilesService } from './files.service';
@@ -10,12 +15,15 @@ import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { existsSync, mkdirSync } from 'fs';
 import { UsersModule } from '../users/users.module';
+import { FilesUploadAuthMiddleware } from './middleware/files-upload-auth.middleware';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     ConfigModule,
     TypeOrmModule.forFeature([FileUpload]),
     UsersModule,
+    AuthModule,
     MulterModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -45,6 +53,7 @@ import { UsersModule } from '../users/users.module';
   ],
   providers: [
     FilesService,
+    FilesUploadAuthMiddleware,
     {
       provide: FILES_S3_CLIENT,
       inject: [ConfigService],
@@ -69,4 +78,10 @@ import { UsersModule } from '../users/users.module';
   ],
   controllers: [FilesController],
 })
-export class FilesModule {}
+export class FilesModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(FilesUploadAuthMiddleware)
+      .forRoutes({ path: 'files', method: RequestMethod.POST });
+  }
+}
