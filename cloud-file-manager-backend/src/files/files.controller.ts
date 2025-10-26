@@ -1,0 +1,135 @@
+import {
+  BadRequestException,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+  UseInterceptors,
+  UploadedFiles,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { FilesService } from './files.service';
+import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { FileUploadResponseDto } from './dto/file-upload-response.dto';
+import { ListFilesQueryDto } from './dto/list-files-query.dto';
+import { PresignedUrlResponseDto } from './dto/presigned-url-response.dto';
+import { User } from '../users/entity/user.entity';
+import type { Express } from 'express';
+
+@ApiTags('Files')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Controller('files')
+export class FilesController {
+  constructor(private readonly filesService: FilesService) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Upload CSV files to S3' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+        },
+      },
+    },
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        data: [
+          {
+            id: 'file-id',
+            originalName: 'health_data_small.csv',
+            mimeType: 'text/csv',
+            sizeBytes: '10240',
+            status: 'ACTIVE',
+            createdAt: '2025-01-01T12:00:00Z',
+            ownerId: 'user-id',
+          },
+        ],
+      },
+    },
+  })
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      storage: memoryStorage(),
+    }),
+  )
+  async uploadFiles(
+    @Req() req: { user: User },
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException({
+        code: 'NO_FILES',
+        message: 'At least one file must be provided',
+      });
+    }
+    const data = await this.filesService.uploadMany(req.user, files);
+    return { data };
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'List uploaded files' })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        data: [
+          {
+            id: 'file-id',
+            originalName: 'health_data_small.csv',
+            mimeType: 'text/csv',
+            sizeBytes: '10240',
+            status: 'ACTIVE',
+            createdAt: '2025-01-01T12:00:00Z',
+            ownerId: 'user-id',
+          },
+        ],
+        meta: { page: 1, limit: 20, total: 1 },
+      },
+    },
+  })
+  async listFiles(
+    @Req() req: { user: User },
+    @Query() query: ListFilesQueryDto,
+  ): Promise<{ data: FileUploadResponseDto[]; meta: any }> {
+    return this.filesService.list(req.user, query);
+  }
+
+  @Get(':id/download')
+  @ApiOperation({ summary: 'Generate a presigned download URL' })
+  @ApiOkResponse({ type: PresignedUrlResponseDto })
+  async downloadFile(
+    @Req() req: { user: User },
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.filesService.generateDownloadUrl(id, req.user);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Soft delete a file (DB only)' })
+  async softDelete(
+    @Req() req: { user: User },
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.filesService.softDelete(id, req.user);
+  }
+}

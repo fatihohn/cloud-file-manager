@@ -10,6 +10,7 @@ import { RedisModule } from '@liaoliaots/nestjs-redis';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { QueueModule } from './queue/queue.module';
+import { FilesModule } from './files/files.module';
 import { createTypeOrmOptions } from './config/typeorm.config';
 
 @Module({
@@ -39,6 +40,7 @@ import { createTypeOrmOptions } from './config/typeorm.config';
     AuthModule,
     LoggerModule,
     QueueModule,
+    FilesModule,
   ],
   controllers: [AppController],
   providers: [

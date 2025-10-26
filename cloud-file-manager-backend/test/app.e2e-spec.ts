@@ -5,6 +5,8 @@ import { AppModule } from './../src/app.module';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 import { User, UserRole } from '../src/users/entity/user.entity';
+import { join } from 'path';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication;
@@ -46,16 +48,35 @@ describe('AppController (e2e)', () => {
       name: 'AdminUser',
     };
     const memberUser = {
-      email: `johndoe@test.com`,
-      password: 'Sup3rSecure!1',
+      email: `member-${Date.now()}@test.com`,
+      password: 'Sup3rSecure!2',
       name: 'MemberUser',
     };
-    // const memberUser = {
-    //   email: `member-${Date.now()}@test.com`,
-    //   password: 'Sup3rSecure!2',
-    //   name: 'MemberUser',
-    // };
     let memberId: string;
+    let uploadedFileId: string;
+    let secondFileId: string;
+    const resolveSampleFile = (filename: string) => {
+      const rootPath = join(__dirname, '..');
+      const primaryPath = join(rootPath, 'test', 'test-data', filename);
+      if (existsSync(primaryPath)) {
+        return primaryPath;
+      }
+      const fallbackDir = join(rootPath, 'tmp-test-files');
+      if (!existsSync(fallbackDir)) {
+        mkdirSync(fallbackDir, { recursive: true });
+      }
+      const fallbackPath = join(fallbackDir, filename);
+      if (!existsSync(fallbackPath)) {
+        writeFileSync(
+          fallbackPath,
+          'timestamp,value\n2025-01-01T00:00:00Z,1\n2025-01-02T00:00:00Z,2\n',
+        );
+      }
+      return fallbackPath;
+    };
+
+    const sampleFileSmall = resolveSampleFile('health_data_small.csv');
+    const sampleFileMedium = resolveSampleFile('health_data_medium.csv');
 
     it('POST /signup (Admin)', async () => {
       return request(app.getHttpServer() as App)
@@ -192,6 +213,57 @@ describe('AppController (e2e)', () => {
         .then((res) => {
           expect(res.body.name).toEqual(newName);
         });
+    });
+
+    describe('Files API', () => {
+      it('POST /files (upload multiple csv)', async () => {
+        return request(app.getHttpServer() as App)
+          .post('/files')
+          .set('Authorization', `Bearer ${memberToken}`)
+          .attach('files', sampleFileSmall)
+          .attach('files', sampleFileMedium)
+          .expect(201)
+          .then((res) => {
+            expect(Array.isArray(res.body.data)).toBeTruthy();
+            expect(res.body.data).toHaveLength(2);
+            uploadedFileId = res.body.data[0].id;
+            secondFileId = res.body.data[1].id;
+          });
+      });
+
+      it('GET /files (list uploaded files)', async () => {
+        return request(app.getHttpServer() as App)
+          .get('/files')
+          .set('Authorization', `Bearer ${memberToken}`)
+          .expect(200)
+          .then((res) => {
+            expect(res.body.meta.total).toBeGreaterThanOrEqual(2);
+            expect(
+              res.body.data.find((file) => file.id === uploadedFileId),
+            ).toBeDefined();
+          });
+      });
+
+      it('GET /files/:id/download (presigned url)', async () => {
+        return request(app.getHttpServer() as App)
+          .get(`/files/${uploadedFileId}/download`)
+          .set('Authorization', `Bearer ${memberToken}`)
+          .expect(200)
+          .then((res) => {
+            expect(res.body.url).toContain('https://');
+            expect(res.body.expiresAt).toBeDefined();
+          });
+      });
+
+      it('DELETE /files/:id (soft delete)', async () => {
+        return request(app.getHttpServer() as App)
+          .delete(`/files/${secondFileId}`)
+          .set('Authorization', `Bearer ${memberToken}`)
+          .expect(200)
+          .then((res) => {
+            expect(res.body.code).toEqual('FILE_SOFT_DELETED');
+          });
+      });
     });
 
     it('DELETE /users/:id (Unauthorized user tries to delete another user) -> 401 Unauthorized', async () => {
