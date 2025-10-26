@@ -15,6 +15,7 @@ import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { RedisService } from '@liaoliaots/nestjs-redis';
 import { USER_EVENTS_QUEUE } from '../queue/queue.constants';
+import { USER_ERRORS, USER_RESPONSES } from './users.errors';
 
 export enum UserKeyPrefix {
   EMAIL = 'user:email:',
@@ -65,7 +66,7 @@ export class UsersService {
       where: { email },
     });
     if (existingUser) {
-      throw new ConflictException('Email already in use');
+      throw new ConflictException(USER_ERRORS.EMAIL_IN_USE);
     }
 
     const salt = await bcrypt.genSalt();
@@ -81,7 +82,7 @@ export class UsersService {
       await this.usersRepository.save(user);
     } catch (error) {
       this.logger.error('Error creating user', String(error));
-      throw new ConflictException('Error creating user');
+      throw new ConflictException(USER_ERRORS.CREATE_FAILED);
     }
 
     return user;
@@ -89,13 +90,18 @@ export class UsersService {
 
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.findOneById(id);
-    if (!user) throw new ConflictException(`Cannot find user with ID ${id}.`);
+    if (!user) {
+      throw new ConflictException({
+        code: USER_ERRORS.NOT_FOUND.code,
+        message: USER_ERRORS.NOT_FOUND.message(id),
+      });
+    }
 
     await this._dropCachedUser(user);
 
     if (updateUserDto.email && updateUserDto.email !== user.email) {
       const existingUser = await this.findOneByEmail(updateUserDto.email);
-      if (existingUser) throw new ConflictException('Email already in use');
+      if (existingUser) throw new ConflictException(USER_ERRORS.EMAIL_IN_USE);
       user.email = updateUserDto.email;
     }
 
@@ -129,7 +135,10 @@ export class UsersService {
     const user = await this.findOneById(id);
     const result = await this.usersRepository.delete(id);
     if (result.affected === 0) {
-      throw new NotFoundException(`Cannot find user with ID ${id}.`);
+      throw new NotFoundException({
+        code: USER_ERRORS.NOT_FOUND.code,
+        message: USER_ERRORS.NOT_FOUND.message(id),
+      });
     }
 
     await this._dropCachedUser(user!);
@@ -140,7 +149,7 @@ export class UsersService {
       name: user?.name,
     });
 
-    return { message: `Deleted user with ID ${id}.` };
+    return USER_RESPONSES.USER_DELETED(id);
   }
 
   async findOneByEmail(email: string): Promise<User | null> {

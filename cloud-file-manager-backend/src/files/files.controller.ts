@@ -30,6 +30,7 @@ import type { Express } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { Roles } from '../auth/decorator/roles.decorator';
 import { RolesGuard } from '../auth/guard/roles.guard';
+import { FILE_ERRORS } from './files.errors';
 
 @ApiTags('Files')
 @ApiBearerAuth()
@@ -78,10 +79,7 @@ export class FilesController {
     @UploadedFiles() files: Express.Multer.File[],
   ) {
     if (!files || files.length === 0) {
-      throw new BadRequestException({
-        code: 'NO_FILES',
-        message: 'At least one file must be provided',
-      });
+      throw new BadRequestException(FILE_ERRORS.NO_FILES);
     }
     const data = await this.filesService.uploadMany(req.user, files);
     return { data };

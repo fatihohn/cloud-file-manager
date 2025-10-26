@@ -27,6 +27,7 @@ import { Upload } from '@aws-sdk/lib-storage';
 import { FileUploadResponseDto } from './dto/file-upload-response.dto';
 import { ListFilesQueryDto } from './dto/list-files-query.dto';
 import { PresignedUrlResponseDto } from './dto/presigned-url-response.dto';
+import { FILE_ERRORS, FILE_RESPONSES } from './files.errors';
 import type { Express } from 'express';
 
 @Injectable()
@@ -89,10 +90,7 @@ export class FilesService {
   ): Promise<FileUploadResponseDto[]> {
     await this.ensureUserExists(user.id);
     if (!files || files.length === 0) {
-      throw new BadRequestException({
-        code: 'NO_FILES',
-        message: 'At least one file must be provided',
-      });
+      throw new BadRequestException(FILE_ERRORS.NO_FILES);
     }
 
     const results: FileUpload[] = [];
@@ -162,7 +160,7 @@ export class FilesService {
     file.softDeletedAt = new Date();
     await this.filesRepository.save(file);
     return {
-      code: 'FILE_SOFT_DELETED',
+      ...FILE_RESPONSES.FILE_SOFT_DELETED,
       fileId: file.id,
     };
   }
@@ -170,22 +168,16 @@ export class FilesService {
   private validateFile(file: Express.Multer.File) {
     if (file.size > this.maxUploadBytes) {
       throw new PayloadTooLargeException({
-        code: 'UPLOAD_TOO_LARGE',
-        message: `File size exceeds limit of ${this.maxUploadBytes} bytes`,
+        code: FILE_ERRORS.UPLOAD_TOO_LARGE.code,
+        message: FILE_ERRORS.UPLOAD_TOO_LARGE.message(this.maxUploadBytes),
       });
     }
     const mimeType = file.mimetype ?? '';
     if (!this.allowedMimeTypes.includes(mimeType)) {
-      throw new BadRequestException({
-        code: 'UNSUPPORTED_FILE_TYPE',
-        message: 'Only CSV uploads are supported at this time',
-      });
+      throw new BadRequestException(FILE_ERRORS.UNSUPPORTED_FILE_TYPE);
     }
     if (!file.path) {
-      throw new BadRequestException({
-        code: 'FILE_PATH_MISSING',
-        message: 'File path missing for uploaded file',
-      });
+      throw new BadRequestException(FILE_ERRORS.FILE_PATH_MISSING);
     }
   }
 
@@ -193,10 +185,7 @@ export class FilesService {
     const s3Key = `${user.id}/${randomUUID()}`;
     const filePath = file.path;
     if (!filePath) {
-      throw new InternalServerErrorException({
-        code: 'FILE_PATH_MISSING',
-        message: 'File path not available for upload',
-      });
+      throw new InternalServerErrorException(FILE_ERRORS.FILE_PATH_MISSING);
     }
     const checksum = await this.computeChecksum(filePath);
     const originalName = String(file.originalname ?? 'file.csv');
@@ -211,10 +200,7 @@ export class FilesService {
       });
     } catch (error) {
       this.logger.error('S3 upload failed', String(error));
-      throw new InternalServerErrorException({
-        code: 'S3_UPLOAD_FAILED',
-        message: 'Failed to upload file to storage',
-      });
+      throw new InternalServerErrorException(FILE_ERRORS.S3_UPLOAD_FAILED);
     } finally {
       await this.removeTempFile(filePath);
     }
@@ -234,16 +220,12 @@ export class FilesService {
     } catch (error) {
       await this.safeDeleteS3Object(s3Key);
       if (this.isForeignKeyError(error)) {
-        throw new ForbiddenException({
-          code: 'USER_NOT_FOUND',
-          message: 'Owner not found or already deleted',
-        });
+        throw new ForbiddenException(FILE_ERRORS.USER_NOT_FOUND);
       }
       this.logger.error('Failed to persist file metadata', String(error));
-      throw new InternalServerErrorException({
-        code: 'FILE_METADATA_SAVE_FAILED',
-        message: 'Failed to save file metadata',
-      });
+      throw new InternalServerErrorException(
+        FILE_ERRORS.FILE_METADATA_SAVE_FAILED,
+      );
     }
   }
 
@@ -261,19 +243,13 @@ export class FilesService {
   private async getOwnedFileOrThrow(fileId: string, user: User) {
     const file = await this.filesRepository.findOne({ where: { id: fileId } });
     if (!file || file.status === FileUploadStatus.SOFT_DELETED) {
-      throw new NotFoundException({
-        code: 'FILE_NOT_FOUND',
-        message: 'File not found',
-      });
+      throw new NotFoundException(FILE_ERRORS.FILE_NOT_FOUND);
     }
 
     const isOwner = file.ownerId === user.id;
     const isAdmin = user.role === UserRole.ADMIN;
     if (!isOwner && !isAdmin) {
-      throw new ForbiddenException({
-        code: 'FORBIDDEN_RESOURCE',
-        message: 'You do not have access to this file',
-      });
+      throw new ForbiddenException(FILE_ERRORS.FORBIDDEN_RESOURCE);
     }
     return file;
   }
@@ -293,10 +269,7 @@ export class FilesService {
   private async ensureUserExists(userId: string) {
     const existing = await this.usersService.findOneById(userId);
     if (!existing) {
-      throw new ForbiddenException({
-        code: 'USER_NOT_FOUND',
-        message: 'Owner not found or already deleted',
-      });
+      throw new ForbiddenException(FILE_ERRORS.USER_NOT_FOUND);
     }
   }
 

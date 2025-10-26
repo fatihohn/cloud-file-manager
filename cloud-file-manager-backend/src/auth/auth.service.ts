@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { UserRole } from '../users/entity/user.entity';
 import type { StringValue } from 'ms';
 import { LoggerService } from '../logger/logger.service';
+import { AUTH_ERRORS, AUTH_RESPONSES } from './auth.errors';
 
 @Injectable()
 export class AuthService {
@@ -64,19 +65,19 @@ export class AuthService {
       await this._updateRefreshToken(user.id, tokens.refreshToken);
       return tokens;
     } else {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException(AUTH_ERRORS.INVALID_CREDENTIALS);
     }
   }
 
   async logout(userId: string): Promise<{ message: string }> {
     await this.usersService.update(userId, { currentHashedRefreshToken: null });
-    return { message: 'Logged out.' };
+    return { ...AUTH_RESPONSES.LOGGED_OUT };
   }
 
   async refreshTokens(userId: string, refreshToken: string) {
     const user = await this.usersService.findOneById(userId);
     if (!user?.currentHashedRefreshToken) {
-      throw new UnauthorizedException('Invalid credentials: no refresh token');
+      throw new UnauthorizedException(AUTH_ERRORS.REFRESH_TOKEN_MISSING);
     }
 
     const refreshTokenMatches = await bcrypt.compare(
@@ -85,7 +86,7 @@ export class AuthService {
     );
 
     if (!refreshTokenMatches) {
-      throw new UnauthorizedException('Invalid credentials: token mismatch');
+      throw new UnauthorizedException(AUTH_ERRORS.REFRESH_TOKEN_MISMATCH);
     }
 
     const tokens = await this._getTokens(user.id, user.email, user.role);

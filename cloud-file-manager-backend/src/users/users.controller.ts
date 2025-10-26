@@ -21,6 +21,7 @@ import { User, UserRole } from './entity/user.entity';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { LoggerService } from '../logger/logger.service';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation } from '@nestjs/swagger';
+import { USER_ERRORS } from './users.errors';
 
 @Controller('users')
 export class UsersController {
@@ -67,12 +68,15 @@ export class UsersController {
   ) {
     const requestingUser = req.user;
     if (requestingUser.role !== UserRole.ADMIN && requestingUser.id !== id) {
-      throw new ForbiddenException('Invalid access request');
+      throw new ForbiddenException(USER_ERRORS.INVALID_ACCESS);
     }
     const user = await this.usersService.findOneById(id);
 
     if (!user) {
-      throw new NotFoundException(`Cannot find user with ID ${id}.`);
+      throw new NotFoundException({
+        code: USER_ERRORS.NOT_FOUND.code,
+        message: USER_ERRORS.NOT_FOUND.message(id),
+      });
     }
 
     const { password, ...result } = user;
@@ -91,7 +95,7 @@ export class UsersController {
   ) {
     const requestingUser = req.user;
     if (requestingUser.role !== UserRole.ADMIN && requestingUser.id !== id) {
-      throw new ForbiddenException('Invalid access request');
+      throw new ForbiddenException(USER_ERRORS.INVALID_ACCESS);
     }
     return this.usersService.update(id, updateUserDto);
   }
@@ -103,7 +107,7 @@ export class UsersController {
   remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: { user: User }) {
     const requestingUser = req.user;
     if (requestingUser.role !== UserRole.ADMIN && requestingUser.id !== id) {
-      throw new ForbiddenException('Invalid access request');
+      throw new ForbiddenException(USER_ERRORS.INVALID_ACCESS);
     }
 
     return this.usersService.remove(id);
