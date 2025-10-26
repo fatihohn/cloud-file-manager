@@ -6,6 +6,9 @@ export enum UserRole {
   MEMBER = 'Member',
 }
 
+export const PASSWORD_COMPLEXITY_REGEX =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).+$/;
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn()

@@ -1,5 +1,6 @@
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsString, Matches, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { PASSWORD_COMPLEXITY_REGEX } from '../../users/entity/user.entity';
 
 export class AuthCredentialsDto {
   @IsEmail()
@@ -12,11 +13,17 @@ export class AuthCredentialsDto {
   email: string;
 
   @IsString()
-  @MinLength(8)
+  @MinLength(12, {
+    message: 'password must be at least 12 characters long',
+  })
+  @Matches(PASSWORD_COMPLEXITY_REGEX, {
+    message: 'password must include upper/lowercase, number, symbol',
+  })
   @ApiProperty({
     description: 'User password',
     type: 'string',
-    minLength: 8,
+    minLength: 12,
+    example: 'Sup3rSecure!',
   })
   password: string;
 }

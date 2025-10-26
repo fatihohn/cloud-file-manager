@@ -5,6 +5,7 @@ import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import compression from 'compression';
 import bodyParser from 'body-parser';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { validationExceptionFactory } from './common/filters/validation-exception.factory';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -20,6 +21,7 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      exceptionFactory: validationExceptionFactory,
     }),
   );
 
@@ -38,15 +40,15 @@ async function bootstrap() {
   });
 
   // Graceful shutdown for SIGINT or SIGTERM
-  process.on('SIGINT', async () => {
-    console.log('SIGINT signal received: closing application...');
-    await app.close().then(() => process.exit(0));
-  });
+  const shutdown = async (signal: string) => {
+    const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
+    logger.log(`Received ${signal}, closing application...`);
+    await app.close();
+    process.exit(0);
+  };
 
-  process.on('SIGTERM', async () => {
-    console.log('SIGTERM signal received: closing application...');
-    await app.close().then(() => process.exit(0));
-  });
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
   await app.listen(process.env.PORT ?? 3000);
 }

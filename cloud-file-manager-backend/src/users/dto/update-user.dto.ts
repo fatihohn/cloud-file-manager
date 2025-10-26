@@ -1,5 +1,12 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  Matches,
+  MinLength,
+} from 'class-validator';
+import { PASSWORD_COMPLEXITY_REGEX } from '../entity/user.entity';
 
 export class UpdateUserDto {
   @IsEmail()
@@ -14,13 +21,18 @@ export class UpdateUserDto {
   email?: string;
 
   @IsString()
-  @MinLength(8)
   @IsOptional()
-  @ApiPropertyOptional({
+  @MinLength(12, {
+    message: 'password must be at least 12 characters long',
+  })
+  @Matches(PASSWORD_COMPLEXITY_REGEX, {
+    message: 'password must include upper/lowercase, number, symbol',
+  })
+  @ApiProperty({
     description: 'User password',
     type: 'string',
-    minLength: 8,
-    nullable: true,
+    minLength: 12,
+    example: 'Sup3rSecure!',
   })
   password?: string;
 
