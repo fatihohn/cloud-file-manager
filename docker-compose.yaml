@@ -53,6 +53,7 @@ services:
     environment:
       - CHOKIDAR_USEPOLLING=1
       - WATCHPACK_POLLING=true
+      - MODE=api
     command: sh -lc "npm install && npm run start:dev"
     volumes:
       - ./logs/cloud-file-manager-backend:/app/log
@@ -84,6 +85,7 @@ services:
     environment:
       - CHOKIDAR_USEPOLLING=1
       - WATCHPACK_POLLING=true
+      - MODE=worker
     command: sh -lc "npm install && npm run start:worker:dev"
     volumes:
       - ./logs/cloud-file-manager-backend:/app/log

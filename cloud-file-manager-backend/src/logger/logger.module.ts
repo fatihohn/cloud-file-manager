@@ -15,6 +15,7 @@ import { inspect } from 'util';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+        const mode = configService.get<string>('MODE', 'api');
         const level =
           configService.get<string>('LOG_LEVEL') ??
           (nodeEnv === 'development' ? 'debug' : 'info');
@@ -51,6 +52,8 @@ import { inspect } from 'util';
               : safeStringify(timestamp);
           const levelLabel =
             typeof logLevel === 'string' ? logLevel : safeStringify(logLevel);
+          const modeLabel =
+            typeof mode === 'string' ? mode : safeStringify(mode);
           const contextLabel =
             typeof context === 'string' && context.length > 0
               ? ` [${context}]`
@@ -61,10 +64,11 @@ import { inspect } from 'util';
           const stackTrace =
             typeof stack === 'string' && stack.length > 0 ? `\n${stack}` : '';
 
-          return `${timestampLabel} [${levelLabel}]${contextLabel} ${serializedMessage}${serializedMeta}${stackTrace}`;
+          return `${timestampLabel} [${modeLabel}][${levelLabel}]${contextLabel} ${serializedMessage}${serializedMeta}${stackTrace}`;
         });
 
         const jsonFormat = winston.format.combine(
+          winston.format.label({ label: mode }),
           winston.format.timestamp(),
           winston.format.errors({ stack: true }),
           winston.format.json(),
