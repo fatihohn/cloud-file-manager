@@ -77,6 +77,9 @@ Update `.env` (or `.env.example`) with the following queue-focused settings in a
 
 See `docs/aws-queue-refactor-plan.md` for the full migration rationale.
 
+> **docker-compose tip**  
+> The root-level `.env` file (next to `docker-compose.yaml`) is the one injected into both the API and worker containers. If you keep another `.env` inside `cloud-file-manager-backend/`, remember that Compose will not read it. This is especially important for settings such as `MAX_UPLOAD_BYTES`; update the root `.env` when you need to raise or lower the upload ceiling so that Multer and the API container pick up the intended limit.
+
 ## AWS deployment notes
 
 - Build a single Docker image (`docker build .`) and run it with different commands per task definition:
