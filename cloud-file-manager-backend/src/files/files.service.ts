@@ -11,8 +11,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FileUpload, FileUploadStatus } from './entities/file-upload.entity';
 import { User, UserRole } from '../users/entity/user.entity';
+import { UsersService } from '../users/users.service';
 import { FILES_S3_CLIENT } from './files.constants';
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID, createHash, createCipheriv, randomBytes } from 'crypto';
 import { LoggerService } from '../logger/logger.service';
@@ -40,6 +45,7 @@ export class FilesService {
     @Inject(FILES_S3_CLIENT) private readonly s3: S3Client,
     private readonly configService: ConfigService,
     private readonly logger: LoggerService,
+    private readonly usersService: UsersService,
   ) {
     const bucket = this.configService.get<string>('FILES_BUCKET_NAME');
     if (!bucket) {
@@ -81,6 +87,7 @@ export class FilesService {
     user: User,
     files: Express.Multer.File[],
   ): Promise<FileUploadResponseDto[]> {
+    await this.ensureUserExists(user.id);
     if (!files || files.length === 0) {
       throw new BadRequestException({
         code: 'NO_FILES',
@@ -247,7 +254,22 @@ export class FilesService {
       checksumSha256: checksum,
     });
 
-    return this.filesRepository.save(record);
+    try {
+      return await this.filesRepository.save(record);
+    } catch (error) {
+      await this.safeDeleteS3Object(s3Key);
+      if (this.isForeignKeyError(error)) {
+        throw new ForbiddenException({
+          code: 'USER_NOT_FOUND',
+          message: 'Owner not found or already deleted',
+        });
+      }
+      this.logger.error('Failed to persist file metadata', String(error));
+      throw new InternalServerErrorException({
+        code: 'FILE_METADATA_SAVE_FAILED',
+        message: 'Failed to save file metadata',
+      });
+    }
   }
 
   private encryptFileName(value: string) {
@@ -293,6 +315,16 @@ export class FilesService {
     };
   }
 
+  private async ensureUserExists(userId: string) {
+    const existing = await this.usersService.findOneById(userId);
+    if (!existing) {
+      throw new ForbiddenException({
+        code: 'USER_NOT_FOUND',
+        message: 'Owner not found or already deleted',
+      });
+    }
+  }
+
   private async computeChecksum(filePath: string): Promise<string> {
     const hash = createHash('sha256');
     await new Promise<void>((resolve, reject) => {
@@ -333,5 +365,27 @@ export class FilesService {
     } catch (error) {
       this.logger.warn('Failed to remove temp upload file', String(error));
     }
+  }
+
+  private async safeDeleteS3Object(key: string) {
+    try {
+      await this.s3.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+        }),
+      );
+    } catch (error) {
+      this.logger.warn('Failed to cleanup orphaned S3 object', String(error));
+    }
+  }
+
+  private isForeignKeyError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code: string }).code === '23503'
+    );
   }
 }
