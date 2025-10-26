@@ -1,52 +1,42 @@
 import {
+  Inject,
   Injectable,
-  LoggerService as CommonLoggerService,
+  LoggerService as NestLoggerService,
+  LogLevel,
 } from '@nestjs/common';
-import * as winston from 'winston';
-import DailyRotateFile from 'winston-daily-rotate-file';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 
 @Injectable()
-export class LoggerService implements CommonLoggerService {
-  private readonly logger: winston.Logger;
+export class LoggerService implements NestLoggerService {
+  constructor(
+    @Inject(WINSTON_MODULE_NEST_PROVIDER)
+    private readonly logger: NestLoggerService,
+  ) {}
 
-  constructor() {
-    this.logger = winston.createLogger({
-      level: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
-      format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json(),
-      ),
-      transports: [
-        new winston.transports.Console(),
-        new winston.transports.File({ filename: 'log/app.log' }),
-        new DailyRotateFile({
-          filename: 'log/app-%DATE%.log',
-          datePattern: 'YYYY-MM-DD',
-          zippedArchive: true,
-          maxSize: '20m',
-          maxFiles: '14d',
-        }),
-      ],
-    });
+  log(message: string, ...optionalParams: unknown[]) {
+    this.logger.log(message, ...optionalParams);
   }
 
-  log(message: string, ...meta: any[]) {
-    this.logger.info(message, ...meta);
+  error(message: string, ...optionalParams: unknown[]) {
+    this.logger.error(message, ...optionalParams);
   }
 
-  error(message: string, trace: string) {
-    this.logger.error(message, { trace });
+  warn(message: string, ...optionalParams: unknown[]) {
+    this.logger.warn(message, ...optionalParams);
   }
 
-  warn(message: string, ...meta: any[]) {
-    this.logger.warn(message, ...meta);
+  debug?(message: string, ...optionalParams: unknown[]) {
+    this.logger.debug?.(message, ...optionalParams);
   }
 
-  debug(message: string, ...meta: any[]) {
-    this.logger.debug(message, ...meta);
+  verbose?(message: string, ...optionalParams: unknown[]) {
+    this.logger.verbose?.(message, ...optionalParams);
   }
 
-  verbose(message: string, ...meta: any[]) {
-    this.logger.verbose(message, ...meta);
+  setLogLevels?(levels: LogLevel[]) {
+    const target = this.logger as NestLoggerService & {
+      setLogLevels?: (levels: LogLevel[]) => void;
+    };
+    target.setLogLevels?.(levels);
   }
 }

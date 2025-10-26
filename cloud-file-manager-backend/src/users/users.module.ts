@@ -3,7 +3,6 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './entity/user.entity';
-import { LoggerService } from '../logger/logger.service';
 import { BullModule } from '@nestjs/bull';
 import { UserEventProcessor } from './users.processor';
 
@@ -15,7 +14,7 @@ import { UserEventProcessor } from './users.processor';
     }),
   ],
   controllers: [UsersController],
-  providers: [UsersService, UserEventProcessor, LoggerService],
+  providers: [UsersService, UserEventProcessor],
   exports: [UsersService],
 })
 export class UsersModule {}

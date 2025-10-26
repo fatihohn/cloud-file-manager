@@ -9,7 +9,6 @@ import { JwtStrategy } from './jwt.strategy';
 import { RolesGuard } from './guard/roles.guard';
 import type { StringValue } from 'ms';
 import { JwtRefreshStrategy } from './jwt-refresh-strategy';
-import { LoggerService } from '../logger/logger.service';
 
 @Module({
   imports: [
@@ -29,13 +28,7 @@ import { LoggerService } from '../logger/logger.service';
       }),
     }),
   ],
-  providers: [
-    AuthService,
-    JwtStrategy,
-    JwtRefreshStrategy,
-    RolesGuard,
-    LoggerService,
-  ],
+  providers: [AuthService, JwtStrategy, JwtRefreshStrategy, RolesGuard],
   controllers: [AuthController],
   exports: [AuthService, PassportModule],
 })

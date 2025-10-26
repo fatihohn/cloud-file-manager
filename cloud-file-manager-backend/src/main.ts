@@ -1,15 +1,16 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
-import { LoggerService } from './logger/logger.service';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import compression from 'compression';
 import bodyParser from 'body-parser';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
-    logger: new LoggerService(),
+    bufferLogs: true,
   });
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
   app.use(compression());
   app.use(bodyParser.json({ limit: '100mb' }));
