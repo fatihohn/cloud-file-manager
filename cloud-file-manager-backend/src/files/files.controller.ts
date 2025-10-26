@@ -23,12 +23,13 @@ import {
 import { FilesService } from './files.service';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { FileUploadResponseDto } from './dto/file-upload-response.dto';
 import { ListFilesQueryDto } from './dto/list-files-query.dto';
 import { PresignedUrlResponseDto } from './dto/presigned-url-response.dto';
-import { User } from '../users/entity/user.entity';
+import { User, UserRole } from '../users/entity/user.entity';
 import type { Express } from 'express';
 import { Throttle } from '@nestjs/throttler';
+import { Roles } from '../auth/decorator/roles.decorator';
+import { RolesGuard } from '../auth/guard/roles.guard';
 
 @ApiTags('Files')
 @ApiBearerAuth()
@@ -89,7 +90,7 @@ export class FilesController {
   @Get()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'List uploaded files' })
+  @ApiOperation({ summary: 'List my files' })
   @ApiOkResponse({
     schema: {
       example: {
@@ -108,11 +109,20 @@ export class FilesController {
       },
     },
   })
-  async listFiles(
+  async listMyFiles(
     @Req() req: { user: User },
     @Query() query: ListFilesQueryDto,
-  ): Promise<{ data: FileUploadResponseDto[]; meta: any }> {
-    return this.filesService.list(req.user, query);
+  ) {
+    return this.filesService.listUserFiles(req.user, query);
+  }
+
+  @Get('all')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'List all files (Admin only)' })
+  async listAllFiles(@Query() query: ListFilesQueryDto) {
+    return this.filesService.listAllFiles(query);
   }
 
   @Get(':id/download')

@@ -105,56 +105,31 @@ export class FilesService {
     return results.map((file) => this.toResponseDto(file));
   }
 
-  async list(
+  async listUserFiles(
     user: User,
     query: ListFilesQueryDto,
   ): Promise<{
     data: FileUploadResponseDto[];
     meta: { page: number; limit: number; total: number };
   }> {
-    const qb = this.filesRepository
-      .createQueryBuilder('file')
-      .where('file.status = :status', { status: FileUploadStatus.ACTIVE });
-
-    const isAdmin = user.role === UserRole.ADMIN;
-    if (!isAdmin) {
-      qb.andWhere('file.ownerId = :ownerId', { ownerId: user.id });
-    }
-
-    if (query.q) {
-      qb.andWhere('file.originalName ILIKE :q', { q: `%${query.q}%` });
-    }
-    if (query.from) {
-      const fromDate = new Date(query.from);
-      if (!isNaN(fromDate.getTime())) {
-        qb.andWhere('file.createdAt >= :from', {
-          from: fromDate.toISOString(),
-        });
-      }
-    }
-    if (query.to) {
-      const toDate = new Date(query.to);
-      if (!isNaN(toDate.getTime())) {
-        qb.andWhere('file.createdAt <= :to', { to: toDate.toISOString() });
-      }
-    }
-
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-
-    qb.orderBy('file.createdAt', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit);
-
+    const { qb, page, limit } = this.createListQueryBuilder(query);
+    qb.andWhere('file.ownerId = :ownerId', { ownerId: user.id });
     const [data, total] = await qb.getManyAndCount();
-
     return {
       data: data.map((file) => this.toResponseDto(file)),
-      meta: {
-        page,
-        limit,
-        total,
-      },
+      meta: { page, limit, total },
+    };
+  }
+
+  async listAllFiles(query: ListFilesQueryDto): Promise<{
+    data: FileUploadResponseDto[];
+    meta: { page: number; limit: number; total: number };
+  }> {
+    const { qb, page, limit } = this.createListQueryBuilder(query);
+    const [data, total] = await qb.getManyAndCount();
+    return {
+      data: data.map((file) => this.toResponseDto(file)),
+      meta: { page, limit, total },
     };
   }
 
@@ -387,5 +362,38 @@ export class FilesService {
       'code' in error &&
       (error as { code: string }).code === '23503'
     );
+  }
+
+  private createListQueryBuilder(query: ListFilesQueryDto) {
+    const qb = this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.status = :status', { status: FileUploadStatus.ACTIVE });
+
+    if (query.q) {
+      qb.andWhere('file.originalName ILIKE :q', { q: `%${query.q}%` });
+    }
+    if (query.from) {
+      const fromDate = new Date(query.from);
+      if (!isNaN(fromDate.getTime())) {
+        qb.andWhere('file.createdAt >= :from', {
+          from: fromDate.toISOString(),
+        });
+      }
+    }
+    if (query.to) {
+      const toDate = new Date(query.to);
+      if (!isNaN(toDate.getTime())) {
+        qb.andWhere('file.createdAt <= :to', { to: toDate.toISOString() });
+      }
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
+    qb.orderBy('file.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    return { qb, page, limit };
   }
 }

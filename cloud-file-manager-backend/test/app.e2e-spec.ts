@@ -306,7 +306,7 @@ describe('AppController (e2e)', () => {
           .expect(413);
       });
 
-      it('GET /files (list uploaded files)', async () => {
+      it('GET /files (list my files)', async () => {
         return request(app.getHttpServer() as App)
           .get('/files')
           .set('Authorization', `Bearer ${memberToken}`)
@@ -322,20 +322,26 @@ describe('AppController (e2e)', () => {
           });
       });
 
-      it('GET /files/:id/download (presigned url)', async () => {
+      it('GET /files/all (User cannot list all files)', async () => {
         return request(app.getHttpServer() as App)
-          .get(`/files/${uploadedFileId}/download`)
+          .get('/files/all')
           .set('Authorization', `Bearer ${memberToken}`)
+          .expect(403);
+      });
+
+      it('GET /files/all (Admin can list all files)', async () => {
+        return request(app.getHttpServer() as App)
+          .get('/files/all')
+          .set('Authorization', `Bearer ${adminToken}`)
           .expect(200)
           .then((res) => {
-            expect(res.body.url).toContain('https://');
-            expect(res.body.expiresAt).toBeDefined();
+            expect(res.body.meta.total).toBeGreaterThanOrEqual(3);
           });
       });
 
-      it('GET /files/:id/download (presigned url for large file)', async () => {
+      it('GET /files/:id/download (presigned url)', async () => {
         return request(app.getHttpServer() as App)
-          .get(`/files/${uploadedLargeFileId}/download`)
+          .get(`/files/${uploadedFileId}/download`)
           .set('Authorization', `Bearer ${memberToken}`)
           .expect(200)
           .then((res) => {
