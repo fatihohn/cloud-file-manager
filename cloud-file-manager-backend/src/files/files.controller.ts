@@ -28,6 +28,7 @@ import { ListFilesQueryDto } from './dto/list-files-query.dto';
 import { PresignedUrlResponseDto } from './dto/presigned-url-response.dto';
 import { User } from '../users/entity/user.entity';
 import type { Express } from 'express';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('Files')
 @ApiBearerAuth()
@@ -37,6 +38,9 @@ export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   @Post()
+  @Throttle({ default: { limit: 5, ttl: 60 } })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Upload CSV files to S3' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -83,6 +87,8 @@ export class FilesController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'List uploaded files' })
   @ApiOkResponse({
     schema: {
@@ -110,6 +116,8 @@ export class FilesController {
   }
 
   @Get(':id/download')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Generate a presigned download URL' })
   @ApiOkResponse({ type: PresignedUrlResponseDto })
   async downloadFile(
@@ -120,6 +128,8 @@ export class FilesController {
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Soft delete a file (DB only)' })
   async softDelete(
     @Req() req: { user: User },
