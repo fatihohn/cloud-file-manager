@@ -57,9 +57,6 @@ export class AuthService {
     const user = await this.usersService.findOneByEmail(email);
 
     this.logger.log(`Attempting login for user: ${email}`);
-    this.logger.log(
-      `Attempting login for user with password: ${password} ${user?.password} ${String(await bcrypt.compare(password, user?.password ?? ''))}`,
-    );
 
     if (user && (await bcrypt.compare(password, user.password))) {
       const tokens = await this._getTokens(user.id, user.email, user.role);
