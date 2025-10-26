@@ -13,12 +13,19 @@ import {
   UploadedFiles,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
+  ApiPayloadTooLargeResponse,
+  ApiQuery,
   ApiTags,
+  ApiTooManyRequestsResponse,
 } from '@nestjs/swagger';
 import { FilesService } from './files.service';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
@@ -30,7 +37,7 @@ import type { Express } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { Roles } from '../auth/decorator/roles.decorator';
 import { RolesGuard } from '../auth/guard/roles.guard';
-import { FILE_ERRORS } from './files.errors';
+import { FILE_ERRORS, FILE_RESPONSES } from './files.errors';
 
 @ApiTags('Files')
 @ApiBearerAuth()
@@ -41,8 +48,6 @@ export class FilesController {
 
   @Post()
   @Throttle({ default: { limit: 5, ttl: 60 } })
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Upload CSV files to S3' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -57,6 +62,7 @@ export class FilesController {
     },
   })
   @ApiOkResponse({
+    description: 'Files successfully queued for upload/storage.',
     schema: {
       example: {
         data: [
@@ -73,6 +79,24 @@ export class FilesController {
       },
     },
   })
+  @ApiBadRequestResponse({
+    description: 'Missing files array or unsupported mime type.',
+    schema: {
+      example: FILE_ERRORS.UNSUPPORTED_FILE_TYPE,
+    },
+  })
+  @ApiPayloadTooLargeResponse({
+    description: 'File exceeds MAX_UPLOAD_BYTES.',
+    schema: {
+      example: {
+        code: FILE_ERRORS.UPLOAD_TOO_LARGE.code,
+        message: FILE_ERRORS.UPLOAD_TOO_LARGE.message(52428800),
+      },
+    },
+  })
+  @ApiTooManyRequestsResponse({
+    description: 'Exceeded upload throttle window.',
+  })
   @UseInterceptors(FilesInterceptor('files', 10))
   async uploadFiles(
     @Req() req: { user: User },
@@ -86,9 +110,26 @@ export class FilesController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'List my files' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({
+    name: 'q',
+    required: false,
+    description: 'Search by original name',
+  })
+  @ApiQuery({
+    name: 'from',
+    required: false,
+    description: 'ISO date filter (inclusive)',
+    example: '2025-01-01T00:00:00.000Z',
+  })
+  @ApiQuery({
+    name: 'to',
+    required: false,
+    description: 'ISO date filter (inclusive)',
+    example: '2025-12-31T23:59:59.999Z',
+  })
   @ApiOkResponse({
     schema: {
       example: {
@@ -109,17 +150,52 @@ export class FilesController {
   })
   async listMyFiles(
     @Req() req: { user: User },
-    @Query() query: ListFilesQueryDto,
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('q') q?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
+    const query: ListFilesQueryDto = {
+      page: Number(page) || 1,
+      limit: Number(limit) || 20,
+      q: q ?? undefined,
+      from: from ?? undefined,
+      to: to ?? undefined,
+    };
     return this.filesService.listUserFiles(req.user, query);
   }
 
   @Get('all')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @ApiBearerAuth()
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'List all files (Admin only)' })
-  async listAllFiles(@Query() query: ListFilesQueryDto) {
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 50 })
+  @ApiQuery({ name: 'q', required: false })
+  @ApiQuery({ name: 'from', required: false })
+  @ApiQuery({ name: 'to', required: false })
+  @ApiOkResponse({
+    description: 'All non-deleted files (paginated).',
+  })
+  @ApiForbiddenResponse({
+    description: 'Non-admin attempted to list all files.',
+    schema: { example: FILE_ERRORS.FORBIDDEN_RESOURCE },
+  })
+  async listAllFiles(
+    @Query('page') page = 1,
+    @Query('limit') limit = 50,
+    @Query('q') q?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const query: ListFilesQueryDto = {
+      page: Number(page) || 1,
+      limit: Number(limit) || 50,
+      q: q ?? undefined,
+      from: from ?? undefined,
+      to: to ?? undefined,
+    };
     return this.filesService.listAllFiles(query);
   }
 
@@ -128,6 +204,15 @@ export class FilesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Generate a presigned download URL' })
   @ApiOkResponse({ type: PresignedUrlResponseDto })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiNotFoundResponse({
+    description: 'File not found or soft deleted.',
+    schema: { example: FILE_ERRORS.FILE_NOT_FOUND },
+  })
+  @ApiForbiddenResponse({
+    description: 'User does not own the file.',
+    schema: { example: FILE_ERRORS.FORBIDDEN_RESOURCE },
+  })
   async downloadFile(
     @Req() req: { user: User },
     @Param('id', ParseUUIDPipe) id: string,
@@ -136,9 +221,20 @@ export class FilesController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Soft delete a file (DB only)' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOkResponse({
+    description: 'File marked as soft-deleted in DB.',
+    schema: { example: FILE_RESPONSES.FILE_SOFT_DELETED },
+  })
+  @ApiNotFoundResponse({
+    description: 'File does not exist.',
+    schema: { example: FILE_ERRORS.FILE_NOT_FOUND },
+  })
+  @ApiForbiddenResponse({
+    description: 'User does not own the file.',
+    schema: { example: FILE_ERRORS.FORBIDDEN_RESOURCE },
+  })
   async softDelete(
     @Req() req: { user: User },
     @Param('id', ParseUUIDPipe) id: string,
