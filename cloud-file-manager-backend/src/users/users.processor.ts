@@ -5,7 +5,7 @@ import { USER_EVENTS_QUEUE } from '../queue/queue.constants';
 import { LoggerService } from '../logger/logger.service';
 
 interface UserDeletionJobData {
-  userId: number | string;
+  userId: string;
 }
 
 @Injectable()

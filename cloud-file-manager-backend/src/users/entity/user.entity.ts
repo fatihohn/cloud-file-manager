@@ -11,9 +11,9 @@ export const PASSWORD_COMPLEXITY_REGEX =
 
 @Entity('users')
 export class User {
-  @PrimaryGeneratedColumn()
-  @ApiProperty({ description: 'id' })
-  id: number;
+  @PrimaryGeneratedColumn('uuid')
+  @ApiProperty({ description: 'User ID', format: 'uuid' })
+  id: string;
 
   @Column({ unique: true })
   @ApiProperty({

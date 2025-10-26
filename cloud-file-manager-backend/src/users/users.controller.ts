@@ -7,7 +7,7 @@ import {
   Get,
   NotFoundException,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Put,
   Query,
   Req,
@@ -62,7 +62,7 @@ export class UsersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get User by ID' })
   async findOne(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseUUIDPipe) id: string,
     @Req() req: { user: User },
   ) {
     const requestingUser = req.user;
@@ -85,7 +85,7 @@ export class UsersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update User by ID' })
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() updateUserDto: UpdateUserDto,
     @Req() req: { user: User },
   ) {
@@ -100,7 +100,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete User by ID' })
-  remove(@Param('id', ParseIntPipe) id: number, @Req() req: { user: User }) {
+  remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: { user: User }) {
     const requestingUser = req.user;
     if (requestingUser.role !== UserRole.ADMIN && requestingUser.id !== id) {
       throw new ForbiddenException('Invalid access request');

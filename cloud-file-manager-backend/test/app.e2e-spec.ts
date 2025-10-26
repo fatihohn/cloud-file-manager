@@ -9,7 +9,7 @@ import { User, UserRole } from '../src/users/entity/user.entity';
 describe('AppController (e2e)', () => {
   let app: INestApplication;
   let adminToken: string;
-  let adminId: number;
+  let adminId: string;
   let memberToken: string;
 
   beforeAll(async () => {
@@ -36,21 +36,26 @@ describe('AppController (e2e)', () => {
     return request(app.getHttpServer() as App)
       .get('/')
       .expect(200)
-      .expect('Hello World!');
+      .expect('Cloud File Manager API is running!');
   });
 
   describe('Users & Auth', () => {
     const adminUser = {
       email: `admin-${Date.now()}@test.com`,
-      password: 'password1234',
+      password: 'Sup3rSecure!1',
       name: 'AdminUser',
     };
     const memberUser = {
-      email: `member-${Date.now()}@test.com`,
-      password: 'password1234',
+      email: `johndoe@test.com`,
+      password: 'Sup3rSecure!1',
       name: 'MemberUser',
     };
-    let memberId: number;
+    // const memberUser = {
+    //   email: `member-${Date.now()}@test.com`,
+    //   password: 'Sup3rSecure!2',
+    //   name: 'MemberUser',
+    // };
+    let memberId: string;
 
     it('POST /signup (Admin)', async () => {
       return request(app.getHttpServer() as App)
@@ -58,7 +63,7 @@ describe('AppController (e2e)', () => {
         .send(adminUser)
         .expect(201)
         .then(async (res) => {
-          adminId = Number(res.body.id);
+          adminId = res.body.id;
           const dataSource = app.get(DataSource);
           await dataSource
             .getRepository(User)

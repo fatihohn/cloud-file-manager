@@ -69,6 +69,7 @@ export class UsersService {
     }
 
     const salt = await bcrypt.genSalt();
+    this.logger.log(`Creating User with password: ${password}`);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const user = this.usersRepository.create({
@@ -87,19 +88,15 @@ export class UsersService {
     return user;
   }
 
-  async update(id: number, updateUserDto: UpdateUserDto): Promise<User> {
+  async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.findOneById(id);
-    if (!user) {
-      throw new ConflictException(`Cannot find user with ID ${id}.`);
-    }
+    if (!user) throw new ConflictException(`Cannot find user with ID ${id}.`);
 
     await this._dropCachedUser(user);
 
     if (updateUserDto.email && updateUserDto.email !== user.email) {
       const existingUser = await this.findOneByEmail(updateUserDto.email);
-      if (existingUser) {
-        throw new ConflictException('Email already in use');
-      }
+      if (existingUser) throw new ConflictException('Email already in use');
       user.email = updateUserDto.email;
     }
 
@@ -119,12 +116,17 @@ export class UsersService {
       user.currentHashedRefreshToken = updateUserDto.currentHashedRefreshToken;
     }
 
-    await this._cacheUser(user);
+    await this.usersRepository.update({ id: user.id }, user);
+    const reloadedUser = await this.findOneById(user.id);
+    if (reloadedUser) {
+      await this._cacheUser(reloadedUser);
+      return reloadedUser;
+    }
 
-    return await this.usersRepository.save(user);
+    return user;
   }
 
-  async remove(id: number): Promise<{ message: string }> {
+  async remove(id: string): Promise<{ message: string }> {
     const user = await this.findOneById(id);
     const result = await this.usersRepository.delete(id);
     if (result.affected === 0) {
@@ -158,7 +160,7 @@ export class UsersService {
     return user;
   }
 
-  async findOneById(id: number): Promise<User | null> {
+  async findOneById(id: string): Promise<User | null> {
     const key = `${UserKeyPrefix.ID}${id}`;
     const cachedUser = await this.redis?.get(key);
     if (cachedUser) {

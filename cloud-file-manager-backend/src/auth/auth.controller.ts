@@ -13,7 +13,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout user' })
   logout(@Req() req) {
-    return this.authService.logout(req.user.sub as number);
+    return this.authService.logout(req.user.id as string);
   }
 
   @Post('/refresh')
@@ -21,7 +21,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Refresh access token' })
   refreshTokens(@Req() req) {
-    const userId = req.user.sub as number;
+    const userId = req.user.id as string;
     const refreshToken = req.user.refreshToken as string;
     return this.authService.refreshTokens(userId, refreshToken);
   }

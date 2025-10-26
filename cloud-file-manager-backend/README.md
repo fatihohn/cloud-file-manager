@@ -9,6 +9,14 @@ NestJS + TypeORM service that exposes the Cloud File Manager API and pushes asyn
 - PostgreSQL 15+
 - Redis 7+ (or AWS ElastiCache compatible endpoint)
 
+### PostgreSQL UUID setup
+
+User IDs use UUID primary keys. Make sure your database enables the extension once:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+```
+
 ## Installation
 
 ```bash
