@@ -6,11 +6,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { LoggerModule } from './logger/logger.module';
-import { join } from 'path';
-import { BullModule } from '@nestjs/bull';
 import { RedisModule } from '@liaoliaots/nestjs-redis';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { QueueModule } from './queue/queue.module';
+import { createTypeOrmOptions } from './config/typeorm.config';
 
 @Module({
   imports: [
@@ -21,33 +21,7 @@ import { APP_GUARD } from '@nestjs/core';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        host: configService.get<string>('DATABASE_HOST', 'postgres'),
-        port: parseInt(configService.get<string>('DATABASE_PORT', '5432')),
-        username: configService.get<string>('POSTGRES_USER'),
-        password: configService.get<string>('POSTGRES_PASSWORD'),
-        database: configService.get<string>('POSTGRES_DATABASE'),
-        entities: [
-          join(
-            __dirname,
-            '..',
-            '**',
-            __dirname.includes('dist') ? '*.entity.js' : '*.entity.ts',
-          ),
-        ],
-        synchronize: configService.get<string>('NODE_ENV') === 'development',
-      }),
-    }),
-    BullModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        redis: {
-          host: configService.get<string>('REDIS_HOST', 'redis'),
-          port: parseInt(configService.get<string>('REDIS_PORT', '6379')),
-        },
-      }),
+      useFactory: createTypeOrmOptions,
     }),
     RedisModule.forRoot({
       config: {
@@ -64,6 +38,7 @@ import { APP_GUARD } from '@nestjs/core';
     UsersModule,
     AuthModule,
     LoggerModule,
+    QueueModule,
   ],
   controllers: [AppController],
   providers: [

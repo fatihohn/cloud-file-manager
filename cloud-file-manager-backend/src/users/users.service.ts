@@ -10,10 +10,11 @@ import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcrypt';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { LoggerService } from '../logger/logger.service';
-import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { RedisService } from '@liaoliaots/nestjs-redis';
+import { USER_EVENTS_QUEUE } from '../queue/queue.constants';
 
 export enum UserKeyPrefix {
   EMAIL = 'user:email:',
@@ -27,7 +28,7 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
-    @InjectQueue('user-events')
+    @InjectQueue(USER_EVENTS_QUEUE)
     private readonly userEventsQueue: Queue,
     private readonly redisService: RedisService,
     private readonly logger: LoggerService,
