@@ -1,0 +1,3 @@
+echo "Running e2e tests before commit..."
+docker compose up -d
+docker exec cloud-file-manager-backend-api sh -c 'cd /app && npm run test:e2e'
