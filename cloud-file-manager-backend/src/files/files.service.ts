@@ -172,7 +172,7 @@ export class FilesService {
   async softDelete(fileId: string, user: User) {
     const file = await this.getOwnedFileOrThrow(fileId, user);
     file.status = FileUploadStatus.SOFT_DELETED;
-    file.softDeletedAt = new Date();
+    file.deletedAt = new Date();
     await this.filesRepository.save(file);
     return {
       ...FILE_RESPONSES.FILE_SOFT_DELETED,

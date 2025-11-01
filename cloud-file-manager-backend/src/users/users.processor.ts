@@ -58,7 +58,7 @@ export class UserEventProcessor extends WorkerHost {
   private async handleUserSoftDeleted(userId: string): Promise<void> {
     await this.fileUploadRepository.update(
       { ownerId: userId },
-      { status: FileUploadStatus.SOFT_DELETED, softDeletedAt: new Date() },
+      { status: FileUploadStatus.SOFT_DELETED, deletedAt: new Date() },
     );
   }
 }

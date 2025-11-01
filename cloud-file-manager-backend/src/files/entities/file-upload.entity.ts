@@ -60,8 +60,8 @@ export class FileUpload {
   status: FileUploadStatus;
 
   @ApiPropertyOptional({ description: 'Timestamp when file was soft deleted' })
-  @Column({ name: 'soft_deleted_at', type: 'timestamptz', nullable: true })
-  softDeletedAt?: Date | null;
+  @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deletedAt?: Date | null;
 
   @ApiProperty({ format: 'date-time' })
   @CreateDateColumn({ name: 'created_at' })
