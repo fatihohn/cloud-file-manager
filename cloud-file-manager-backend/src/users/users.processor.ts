@@ -3,6 +3,12 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { USER_EVENTS_QUEUE } from '../queue/queue.constants';
 import { LoggerService } from '../logger/logger.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import {
+  FileUpload,
+  FileUploadStatus,
+} from '../files/entities/file-upload.entity';
 
 interface UserDeletionJobData {
   userId: string;
@@ -14,7 +20,11 @@ interface UserDeletionJobData {
   limiter: { max: 5, duration: 1000 },
 })
 export class UserEventProcessor extends WorkerHost {
-  constructor(private readonly logger: LoggerService) {
+  constructor(
+    private readonly logger: LoggerService,
+    @InjectRepository(FileUpload)
+    private readonly fileUploadRepository: Repository<FileUpload>,
+  ) {
     super();
   }
 
@@ -34,6 +44,8 @@ export class UserEventProcessor extends WorkerHost {
       userId,
     });
 
+    await this.handleUserSoftDeleted(String(userId));
+
     // Placeholder for actual deletion side-effects.
     this.logger.log('[user-deletion-job] handling completed', {
       jobId: job.id,
@@ -41,5 +53,12 @@ export class UserEventProcessor extends WorkerHost {
     });
 
     await job.updateProgress(100);
+  }
+
+  private async handleUserSoftDeleted(userId: string): Promise<void> {
+    await this.fileUploadRepository.update(
+      { ownerId: userId },
+      { status: FileUploadStatus.SOFT_DELETED, softDeletedAt: new Date() },
+    );
   }
 }

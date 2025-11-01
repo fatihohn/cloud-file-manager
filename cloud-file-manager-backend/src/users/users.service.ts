@@ -131,24 +131,15 @@ export class UsersService {
     return user;
   }
 
-  async remove(id: string): Promise<{ message: string }> {
-    const user = await this.findOneById(id);
-    const result = await this.usersRepository.delete(id);
+  async remove(id: string): Promise<{ message: string; code: string }> {
+    const result = await this.usersRepository.softDelete(id);
     if (result.affected === 0) {
       throw new NotFoundException({
         code: USER_ERRORS.NOT_FOUND.code,
         message: USER_ERRORS.NOT_FOUND.message(id),
       });
     }
-
-    await this._dropCachedUser(user!);
-
-    await this.userEventsQueue.add('user-deletion', {
-      userId: id,
-      email: user?.email,
-      name: user?.name,
-    });
-
+    await this.userEventsQueue.add('user-deletion', { userId: id });
     return USER_RESPONSES.USER_DELETED(id);
   }
 
