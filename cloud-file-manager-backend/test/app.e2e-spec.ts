@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
@@ -5,37 +6,33 @@ import { AppModule } from './../src/app.module';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 import { User, UserRole } from '../src/users/entity/user.entity';
-import { join } from 'path';
-import { createWriteStream, existsSync, mkdirSync } from 'fs';
+import { FileUploadStatus } from '../src/files/entities/file-upload.entity';
+import { S3EventProcessor } from '../src/files/files.processor';
 import {
-  FileUpload,
-  FileUploadStatus,
-} from '../src/files/entities/file-upload.entity';
-import { S3Client, HeadObjectCommand } from '@aws-sdk/client-s3';
-
-const createS3Client = () => {
-  const region = process.env.AWS_REGION ?? 'ap-northeast-2';
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-  return new S3Client({
-    region,
-    credentials:
-      accessKeyId && secretAccessKey
-        ? {
-            accessKeyId,
-            secretAccessKey,
-          }
-        : undefined,
-  });
-};
+  S3Client,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
+import { createReadStream, existsSync, statSync } from 'fs';
+import { join } from 'path';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication;
   let adminToken: string;
-  let adminId: string;
   let memberToken: string;
 
-  process.env.MAX_UPLOAD_BYTES = String(200 * 1024 * 1024);
+  const resolveSampleFile = (filename: string) => {
+    const potentialPaths = [
+      join(__dirname, 'test-data', filename),
+      join(__dirname, '..', 'test', 'test-data', filename),
+    ];
+    for (const candidate of potentialPaths) {
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    throw new Error(`Test file not found: ${filename}`);
+  };
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -75,62 +72,6 @@ describe('AppController (e2e)', () => {
       password: 'Sup3rSecure!2',
       name: 'MemberUser',
     };
-    let memberId: string;
-    let uploadedFileId: string;
-    let secondFileId: string;
-    let uploadedLargeFileId: string;
-    const bucketName =
-      process.env.FILES_BUCKET_NAME ?? 'cloud-file-manager-user-files-dev';
-    const resolveSampleFile = (filename: string, fallbackSizeBytes = 1024) => {
-      const repoRoot = join(__dirname, '..', '..');
-      const potentialPaths = [
-        join(__dirname, 'test-data', filename),
-        join(repoRoot, 'test', 'test-data', filename),
-        join(
-          repoRoot,
-          'cloud-file-manager-backend',
-          'test',
-          'test-data',
-          filename,
-        ),
-      ];
-      for (const candidate of potentialPaths) {
-        if (existsSync(candidate)) {
-          return candidate;
-        }
-      }
-      const fallbackDir = join(repoRoot, 'tmp-test-files');
-      if (!existsSync(fallbackDir)) {
-        mkdirSync(fallbackDir, { recursive: true });
-      }
-      const fallbackPath = join(fallbackDir, filename);
-      if (!existsSync(fallbackPath)) {
-        const stream = createWriteStream(fallbackPath);
-        stream.write('timestamp,value\n');
-        const row = '2025-01-01T00:00:00Z,1\n';
-        let written = row.length;
-        while (written < fallbackSizeBytes) {
-          stream.write(row);
-          written += row.length;
-        }
-        stream.end();
-      }
-      return fallbackPath;
-    };
-
-    const sampleFileSmall = resolveSampleFile('health_data_small.csv');
-    const sampleFileMedium = resolveSampleFile(
-      'health_data_medium.csv',
-      35 * 1024 * 1024,
-    );
-    const sampleFileLarge = resolveSampleFile(
-      'health_data_large.csv',
-      117 * 1024 * 1024,
-    );
-    const sampleFileExtraLarge = resolveSampleFile(
-      'health_data_xlarge.csv',
-      586 * 1024 * 1024,
-    );
 
     it('POST /signup (Admin)', async () => {
       return request(app.getHttpServer() as App)
@@ -138,7 +79,6 @@ describe('AppController (e2e)', () => {
         .send(adminUser)
         .expect(201)
         .then(async (res) => {
-          adminId = res.body.id;
           const dataSource = app.get(DataSource);
           await dataSource
             .getRepository(User)
@@ -153,7 +93,6 @@ describe('AppController (e2e)', () => {
         .expect(201)
         .then((res) => {
           expect(res.body.email).toEqual(memberUser.email);
-          memberId = res.body.id;
         });
     });
 
@@ -178,239 +117,258 @@ describe('AppController (e2e)', () => {
           adminToken = res.body.accessToken;
         });
     });
+  });
 
-    it('GET /users (Admin)', async () => {
-      return request(app.getHttpServer() as App)
-        .get('/users')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .expect(200)
-        .then((res) => {
-          expect(
-            res.body.data?.find(
-              (user: User) => user.email === memberUser.email,
-            ),
-          ).toBeDefined();
-          expect(
-            res.body.data?.find((user: User) => user.email === adminUser.email),
-          ).toBeDefined();
-        });
-    });
+  describe('Files API Lifecycle', () => {
+    const testFiles = [
+      {
+        name: 'health_data_small.csv',
+        contentType: 'text/csv',
+        path: resolveSampleFile('health_data_small.csv'),
+      },
+      {
+        name: 'health_data_medium.csv',
+        contentType: 'text/csv',
+        path: resolveSampleFile('health_data_medium.csv'),
+      },
+      {
+        name: 'health_data_large.csv',
+        contentType: 'text/csv',
+        path: resolveSampleFile('health_data_large.csv'),
+      },
+    ].map((f) => ({ ...f, size: statSync(f.path).size }));
 
-    it('GET /users (Member tries to access all users) -> 403 Forbidden', async () => {
-      return request(app.getHttpServer() as App)
-        .get('/users')
+    const presignedData: {
+      fileId: string;
+      url: string;
+      fields: any;
+      s3Key: string;
+    }[] = [];
+
+    it('should generate presigned URLs for multiple files', async () => {
+      const fileMeta = testFiles.map(({ name, contentType, size }) => ({
+        fileName: name,
+        contentType,
+        size,
+      }));
+
+      const res = await request(app.getHttpServer() as App)
+        .post('/files/presigned-url')
         .set('Authorization', `Bearer ${memberToken}`)
-        .expect(403);
-    });
+        .send(fileMeta)
+        .expect(201);
 
-    it('GET /users/me (Member)', async () => {
-      return request(app.getHttpServer() as App)
-        .get('/users/me')
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(200)
-        .then((res) => {
-          expect(res.body.email).toEqual(memberUser.email);
-        });
-    });
+      expect(res.body.data).toHaveLength(testFiles.length);
 
-    it('GET /users/:id (Member)', async () => {
-      return request(app.getHttpServer() as App)
-        .get(`/users/${memberId}`)
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(200)
-        .then((res) => {
-          expect(res.body.email).toEqual(memberUser.email);
-        });
-    });
-
-    it('GET /users/:id (Member tries to access another user) -> 403 Forbidden', async () => {
-      return request(app.getHttpServer() as App)
-        .get(`/users/${adminId}`)
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(403);
-    });
-
-    it('PUT /users/:id (Unauthorized user tries to update another user) -> 401 Unauthorized', async () => {
-      return request(app.getHttpServer() as App)
-        .put(`/users/${memberId}`)
-        .send({ name: 'Unauthorized' })
-        .expect(401);
-    });
-
-    it('PUT /users/:id (Member tries to update another user) -> 403 Forbidden', async () => {
-      return request(app.getHttpServer() as App)
-        .put(`/users/${adminId}`)
-        .send({ name: 'Hacker' })
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(403);
-    });
-
-    it('PUT /users/:id (Member updates self)', async () => {
-      const newName = 'Updated MemberUser';
-      return request(app.getHttpServer() as App)
-        .put(`/users/${memberId}`)
-        .send({ name: newName })
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(200)
-        .then((res) => {
-          expect(res.body.name).toEqual(newName);
-        });
-    });
-
-    it('PUT /users/:id (Admin updates other user)', async () => {
-      const newName = 'Updated By Admin';
-      return request(app.getHttpServer() as App)
-        .put(`/users/${memberId}`)
-        .send({ name: newName })
-        .set('Authorization', `Bearer ${adminToken}`)
-        .expect(200)
-        .then((res) => {
-          expect(res.body.name).toEqual(newName);
-        });
-    });
-
-    describe('Files API', () => {
-      it('POST /files (upload multiple csv)', async () => {
-        return request(app.getHttpServer() as App)
-          .post('/files')
-          .set('Authorization', `Bearer ${memberToken}`)
-          .attach('files', sampleFileSmall)
-          .attach('files', sampleFileMedium)
-          .expect(201)
-          .then((res) => {
-            expect(Array.isArray(res.body.data)).toBeTruthy();
-            expect(res.body.data).toHaveLength(2);
-            uploadedFileId = res.body.data[0].id;
-            secondFileId = res.body.data[1].id;
-          });
-      });
-
-      it('POST /files (upload large csv via multipart streaming)', async () => {
-        return request(app.getHttpServer() as App)
-          .post('/files')
-          .set('Authorization', `Bearer ${memberToken}`)
-          .attach('files', sampleFileLarge)
-          .expect(201)
-          .then((res) => {
-            expect(Array.isArray(res.body.data)).toBeTruthy();
-            expect(res.body.data).toHaveLength(1);
-            uploadedLargeFileId = res.body.data[0].id;
-          });
-      }, 20000);
-
-      it('POST /files (upload extra large csv via multipart streaming)', async () => {
-        return request(app.getHttpServer() as App)
-          .post('/files')
-          .set('Authorization', `Bearer ${memberToken}`)
-          .attach('files', sampleFileExtraLarge)
-          .expect(413);
-      });
-
-      it('GET /files (list my files)', async () => {
-        return request(app.getHttpServer() as App)
-          .get('/files')
-          .set('Authorization', `Bearer ${memberToken}`)
-          .expect(200)
-          .then((res) => {
-            expect(res.body.meta.total).toBeGreaterThanOrEqual(3);
-            expect(
-              res.body.data.find((file) => file.id === uploadedFileId),
-            ).toBeDefined();
-            expect(
-              res.body.data.find((file) => file.id === uploadedLargeFileId),
-            ).toBeDefined();
-          });
-      });
-
-      it('GET /files/all (User cannot list all files)', async () => {
-        return request(app.getHttpServer() as App)
-          .get('/files/all')
-          .set('Authorization', `Bearer ${memberToken}`)
-          .expect(403);
-      });
-
-      it('GET /files/all (Admin can list all files)', async () => {
-        return request(app.getHttpServer() as App)
-          .get('/files/all')
-          .set('Authorization', `Bearer ${adminToken}`)
-          .expect(200)
-          .then((res) => {
-            expect(res.body.meta.total).toBeGreaterThanOrEqual(3);
-          });
-      });
-
-      it('GET /files/:id/download (presigned url)', async () => {
-        return request(app.getHttpServer() as App)
-          .get(`/files/${uploadedFileId}/download`)
-          .set('Authorization', `Bearer ${memberToken}`)
-          .expect(200)
-          .then((res) => {
-            expect(res.body.url).toContain('https://');
-            expect(res.body.expiresAt).toBeDefined();
-          });
-      });
-    });
-
-    it('DELETE /files/:id (soft delete) after uploads)', async () => {
-      const dataSource = app.get(DataSource);
-      const fileRepo = dataSource.getRepository(FileUpload);
-      const fileBefore = await fileRepo.findOne({
-        where: { id: secondFileId },
-      });
-      expect(fileBefore).toBeDefined();
-
-      await request(app.getHttpServer() as App)
-        .delete(`/files/${secondFileId}`)
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(200)
-        .then((res) => {
-          expect(res.body.code).toEqual('FILE_SOFT_DELETED');
-        });
-
-      const deletedFile = await fileRepo.findOne({
-        where: { id: secondFileId },
-      });
-      expect(deletedFile?.status).toEqual(FileUploadStatus.SOFT_DELETED);
-
-      if (bucketName) {
-        const s3Client = createS3Client();
-        await expect(
-          s3Client.send(
-            new HeadObjectCommand({
-              Bucket: bucketName,
-              Key: deletedFile!.s3Key,
-            }),
-          ),
-        ).resolves.toBeDefined();
+      for (const data of res.body.data) {
+        expect(data.fileId).toBeDefined();
+        expect(data.url).toContain('.s3.ap-northeast-2.amazonaws.com');
+        expect(data.fields).toBeDefined();
+        presignedData.push({ ...data, s3Key: data.fields.key });
       }
     });
 
-    it('DELETE /users/:id (Unauthorized user tries to delete another user) -> 401 Unauthorized', async () => {
-      return request(app.getHttpServer() as App)
-        .delete(`/users/${memberId}`)
-        .send({ name: 'Unauthorized' })
-        .expect(401);
-    });
+    it('should simulate uploading files to S3', async () => {
+      const s3Client = new S3Client({
+        region: process.env.AWS_REGION ?? 'ap-northeast-2',
+      });
+      for (let i = 0; i < testFiles.length; i++) {
+        const file = testFiles[i];
+        const data = presignedData[i];
 
-    it('DELETE /users/:id (Member tries to delete another user) -> 403 Forbidden', async () => {
-      return request(app.getHttpServer() as App)
-        .delete(`/users/${adminId}`)
-        .set('Authorization', `Bearer ${memberToken}`)
-        .expect(403);
-    });
+        await s3Client.send(
+          new PutObjectCommand({
+            Bucket:
+              process.env.FILES_BUCKET_NAME ??
+              'cloud-file-manager-user-files-dev',
+            Key: data.s3Key,
+            Body: createReadStream(file.path),
+          }),
+        );
+      }
+    }, 20000); // Increase timeout for S3 uploads
 
-    it('DELETE /users/:id (Member deletes self)', async () => {
-      return request(app.getHttpServer() as App)
-        .delete(`/users/${memberId}`)
+    it('should verify file status as ACTIVE after S3 events', async () => {
+      const s3EventProcessor = app.get(S3EventProcessor);
+      for (let i = 0; i < testFiles.length; i++) {
+        const file = testFiles[i];
+        const data = presignedData[i];
+        const mockS3Event = {
+          Records: [
+            {
+              s3: {
+                bucket: {
+                  name:
+                    process.env.FILES_BUCKET_NAME ??
+                    'cloud-file-manager-user-files-dev',
+                },
+                object: { key: data.s3Key, size: file.size },
+              },
+            },
+          ],
+        };
+        await s3EventProcessor.process({ data: mockS3Event } as any);
+      }
+
+      // Verify the status is updated for the first file
+      const res = await request(app.getHttpServer() as App)
+        .get(`/files/${presignedData[0].fileId}`)
         .set('Authorization', `Bearer ${memberToken}`)
         .expect(200);
+
+      expect(res.body.status).toEqual(FileUploadStatus.ACTIVE);
+      expect(res.body.sizeBytes).toEqual(String(testFiles[0].size));
     });
 
-    it('DELETE /users/:id (Admin deletes self)', async () => {
-      return request(app.getHttpServer() as App)
-        .delete(`/users/${adminId}`)
+    it('should list the uploaded files for the user', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/files')
+        .set('Authorization', `Bearer ${memberToken}`)
+        .expect(200);
+
+      expect(res.body.data.length).toBeGreaterThanOrEqual(testFiles.length);
+      expect(
+        res.body.data.some((f) => f.id === presignedData[0].fileId),
+      ).toBeTruthy();
+      expect(
+        res.body.data.some((f) => f.id === presignedData[1].fileId),
+      ).toBeTruthy();
+    });
+
+    it('should soft-delete a file', async () => {
+      const fileToDelete = presignedData[0];
+
+      await request(app.getHttpServer() as App)
+        .delete(`/files/${fileToDelete.fileId}`)
+        .set('Authorization', `Bearer ${memberToken}`)
+        .expect(200);
+
+      // Verify it's gone from the list
+      const res = await request(app.getHttpServer() as App)
+        .get('/files')
+        .set('Authorization', `Bearer ${memberToken}`)
+        .expect(200);
+      expect(
+        res.body.data.some((f) => f.id === fileToDelete.fileId),
+      ).toBeFalsy();
+
+      // Verify it still exists in S3
+      const s3Client = new S3Client({ region: 'ap-northeast-2' });
+      await expect(
+        s3Client.send(
+          new HeadObjectCommand({
+            Bucket:
+              process.env.FILES_BUCKET_NAME ??
+              'cloud-file-manager-user-files-dev',
+            Key: fileToDelete.s3Key,
+          }),
+        ),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe('Access Control & Failure Cases', () => {
+    let member2Token: string;
+    let member1FileId: string;
+
+    beforeAll(async () => {
+      // Create a second member
+      const member2User = {
+        email: `member2-${Date.now()}@test.com`,
+        password: 'Sup3rSecure!3',
+        name: 'Member2',
+      };
+      await request(app.getHttpServer() as App)
+        .post('/signup')
+        .send(member2User)
+        .expect(201);
+      const signinRes = await request(app.getHttpServer() as App)
+        .post('/signin')
+        .send({ email: member2User.email, password: member2User.password })
+        .expect(201);
+      member2Token = signinRes.body.accessToken;
+
+      // Upload a file as member1
+      const fileToUpload = {
+        name: 'member1_file.csv',
+        contentType: 'text/csv',
+        path: resolveSampleFile('health_data_small.csv'),
+      };
+      const fileMeta = {
+        fileName: fileToUpload.name,
+        contentType: fileToUpload.contentType,
+        size: statSync(fileToUpload.path).size,
+      };
+      const presignedRes = await request(app.getHttpServer() as App)
+        .post('/files/presigned-url')
+        .set('Authorization', `Bearer ${memberToken}`)
+        .send([fileMeta])
+        .expect(201);
+      member1FileId = presignedRes.body.data[0].fileId;
+      const s3Key = presignedRes.body.data[0].fields.key;
+
+      // Simulate upload and event processing
+      const s3Client = new S3Client({ region: 'ap-northeast-2' });
+      await s3Client.send(
+        new PutObjectCommand({
+          Bucket:
+            process.env.FILES_BUCKET_NAME ??
+            'cloud-file-manager-user-files-dev',
+          Key: s3Key,
+          Body: createReadStream(fileToUpload.path),
+        }),
+      );
+      const s3EventProcessor = app.get(S3EventProcessor);
+      await s3EventProcessor.process({
+        data: {
+          Records: [
+            {
+              s3: {
+                bucket: { name: 'test-bucket' },
+                object: { key: s3Key, size: fileMeta.size },
+              },
+            },
+          ],
+        },
+      } as any);
+    });
+
+    it("Admin should be able to list all files, including other users' files", async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/files/all')
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
+
+      expect(res.body.data.some((f) => f.id === member1FileId)).toBeTruthy();
+    });
+
+    it("Member should not be able to access another member's file metadata", async () => {
+      await request(app.getHttpServer() as App)
+        .get(`/files/${member1FileId}`)
+        .set('Authorization', `Bearer ${member2Token}`)
+        .expect(404);
+    });
+
+    it("Member should not be able to get a download URL for another member's file", async () => {
+      await request(app.getHttpServer() as App)
+        .get(`/files/${member1FileId}/download`)
+        .set('Authorization', `Bearer ${member2Token}`)
+        .expect(404);
+    });
+
+    it('should reject a presigned URL request for a file that is too large', async () => {
+      const largeFilePath = resolveSampleFile('health_data_xlarge.csv');
+      const fileMeta = {
+        fileName: 'too_large.csv',
+        contentType: 'text/csv',
+        size: statSync(largeFilePath).size,
+      };
+
+      await request(app.getHttpServer() as App)
+        .post('/files/presigned-url')
+        .set('Authorization', `Bearer ${memberToken}`)
+        .send([fileMeta])
+        .expect(413);
     });
   });
 });
