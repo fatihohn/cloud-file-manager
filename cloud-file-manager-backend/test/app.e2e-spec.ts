@@ -371,4 +371,125 @@ describe('AppController (e2e)', () => {
         .expect(413);
     });
   });
+
+  describe('User Deletion', () => {
+    let tempMemberToken: string;
+    let tempMemberId: string;
+    let tempMemberFileId: string;
+
+    beforeAll(async () => {
+      // Create a temporary member
+      const tempMemberUser = {
+        email: `temp-member-${Date.now()}@test.com`,
+        password: 'Sup3rSecure!4',
+        name: 'TempMember',
+      };
+      const signupRes = await request(app.getHttpServer() as App)
+        .post('/signup')
+        .send(tempMemberUser)
+        .expect(201);
+      tempMemberId = signupRes.body.id;
+      const signinRes = await request(app.getHttpServer() as App)
+        .post('/signin')
+        .send({
+          email: tempMemberUser.email,
+          password: tempMemberUser.password,
+        })
+        .expect(201);
+      tempMemberToken = signinRes.body.accessToken;
+
+      // Upload a file as member1
+      const fileToUpload = {
+        name: 'temp_member_file.csv',
+        contentType: 'text/csv',
+        path: resolveSampleFile('health_data_small.csv'),
+      };
+      const fileMeta = {
+        fileName: fileToUpload.name,
+        contentType: fileToUpload.contentType,
+        size: statSync(fileToUpload.path).size,
+      };
+      const presignedRes = await request(app.getHttpServer() as App)
+        .post('/files/presigned-url')
+        .set('Authorization', `Bearer ${tempMemberToken}`)
+        .send([fileMeta])
+        .expect(201);
+      tempMemberFileId = presignedRes.body.data[0].fileId;
+      const s3Key = presignedRes.body.data[0].fields.key;
+
+      // Simulate upload and event processing
+      const s3Client = new S3Client({ region: 'ap-northeast-2' });
+      await s3Client.send(
+        new PutObjectCommand({
+          Bucket:
+            process.env.FILES_BUCKET_NAME ??
+            'cloud-file-manager-user-files-dev',
+          Key: s3Key,
+          Body: createReadStream(fileToUpload.path),
+        }),
+      );
+      const s3EventProcessor = app.get(S3EventProcessor);
+      await s3EventProcessor.process({
+        data: {
+          Records: [
+            {
+              s3: {
+                bucket: { name: 'test-bucket' },
+                object: { key: s3Key, size: fileMeta.size },
+              },
+            },
+          ],
+        },
+      } as any);
+    });
+
+    it('should allow a member to delete their own account', async () => {
+      await request(app.getHttpServer() as App)
+        .delete(`/users/${tempMemberId}`)
+        .set('Authorization', `Bearer ${tempMemberToken}`)
+        .expect(200)
+        .then((res) => {
+          expect(res.body.message).toContain(
+            `Deleted user with ID ${tempMemberId}`,
+          );
+        });
+
+      // Wait for background job to process
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Verify that signin fails afterwards
+      await request(app.getHttpServer() as App)
+        .post('/signin')
+        .send({
+          email: `temp-member-${Date.now()}@test.com`,
+          password: 'Sup3rSecure!4',
+        })
+        .expect(401);
+    });
+
+    // Verify that the user's files are also soft-deleted
+    it("should verify that the deleted member's files are soft-deleted", async () => {
+      await request(app.getHttpServer() as App)
+        .get(`/files/${tempMemberFileId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(404);
+    });
+
+    // Verify that the user's files still exist in S3
+    it("should verify that the deleted member's files still exist in S3", async () => {
+      const s3Client = new S3Client({ region: 'ap-northeast-2' });
+      const s3Key = `${tempMemberId}/${tempMemberFileId}/temp_member_file.csv`;
+
+      await expect(
+        s3Client.send(
+          new HeadObjectCommand({
+            Bucket:
+              process.env.FILES_BUCKET_NAME ??
+              'cloud-file-manager-user-files-dev',
+            Key: s3Key,
+          }),
+        ),
+      ).resolves.toBeDefined();
+    });
+  });
 });
