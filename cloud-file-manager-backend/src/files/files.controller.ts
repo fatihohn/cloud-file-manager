@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   Get,
@@ -9,35 +10,30 @@ import {
   Query,
   Req,
   UseGuards,
-  UseInterceptors,
-  UploadedFiles,
 } from '@nestjs/common';
 import {
-  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
-  ApiConsumes,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
-  ApiPayloadTooLargeResponse,
   ApiQuery,
   ApiTags,
-  ApiTooManyRequestsResponse,
 } from '@nestjs/swagger';
 import { FilesService } from './files.service';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
-import { FilesInterceptor } from '@nestjs/platform-express';
 import { ListFilesQueryDto } from './dto/list-files-query.dto';
 import { PresignedUrlResponseDto } from './dto/presigned-url-response.dto';
+import { FileUploadResponseDto } from './dto/file-upload-response.dto';
 import { User, UserRole } from '../users/entity/user.entity';
-import type { Express } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { Roles } from '../auth/decorator/roles.decorator';
 import { RolesGuard } from '../auth/guard/roles.guard';
 import { FILE_ERRORS, FILE_RESPONSES } from './files.errors';
+import { CreatePresignedUrlDto } from './dto/create-presigned-url.dto';
+import { CreatePresignedUploadUrlResponseDto } from './dto/create-presigned-upload-url-response.dto';
 
 @ApiTags('Files')
 @ApiBearerAuth()
@@ -46,66 +42,22 @@ import { FILE_ERRORS, FILE_RESPONSES } from './files.errors';
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
-  @Post()
-  @Throttle({ default: { limit: 5, ttl: 60 } })
-  @ApiOperation({ summary: 'Upload CSV files to S3' })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        files: {
-          type: 'array',
-          items: { type: 'string', format: 'binary' },
-        },
-      },
-    },
-  })
-  @ApiOkResponse({
-    description: 'Files successfully queued for upload/storage.',
-    schema: {
-      example: {
-        data: [
-          {
-            id: 'file-id',
-            originalName: 'health_data_small.csv',
-            mimeType: 'text/csv',
-            sizeBytes: '10240',
-            status: 'ACTIVE',
-            createdAt: '2025-01-01T12:00:00Z',
-            ownerId: 'user-id',
-          },
-        ],
-      },
-    },
-  })
-  @ApiBadRequestResponse({
-    description: 'Missing files array or unsupported mime type.',
-    schema: {
-      example: FILE_ERRORS.UNSUPPORTED_FILE_TYPE,
-    },
-  })
-  @ApiPayloadTooLargeResponse({
-    description: 'File exceeds MAX_UPLOAD_BYTES.',
-    schema: {
-      example: {
-        code: FILE_ERRORS.UPLOAD_TOO_LARGE.code,
-        message: FILE_ERRORS.UPLOAD_TOO_LARGE.message(52428800),
-      },
-    },
-  })
-  @ApiTooManyRequestsResponse({
-    description: 'Exceeded upload throttle window.',
-  })
-  @UseInterceptors(FilesInterceptor('files', 10))
-  async uploadFiles(
+  @Post('presigned-url')
+  @Throttle({ default: { limit: 10, ttl: 60 } })
+  @ApiOperation({ summary: 'Generate presigned URLs for direct S3 upload' })
+  @ApiBody({ type: [CreatePresignedUrlDto] })
+  @ApiOkResponse({ type: [CreatePresignedUploadUrlResponseDto] })
+  async getPresignedUrls(
     @Req() req: { user: User },
-    @UploadedFiles() files: Express.Multer.File[],
+    @Body() createDtos: CreatePresignedUrlDto[],
   ) {
-    if (!files || files.length === 0) {
-      throw new BadRequestException(FILE_ERRORS.NO_FILES);
+    if (!Array.isArray(createDtos) || createDtos.length === 0) {
+      throw new BadRequestException('Request body must be a non-empty array.');
     }
-    const data = await this.filesService.uploadMany(req.user, files);
+    const data = await this.filesService.createPresignedUploadUrls(
+      req.user,
+      createDtos,
+    );
     return { data };
   }
 
@@ -197,6 +149,19 @@ export class FilesController {
       to: to ?? undefined,
     };
     return this.filesService.listAllFiles(query);
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get file metadata by ID' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOkResponse({ type: FileUploadResponseDto })
+  @ApiNotFoundResponse({ description: 'File not found' })
+  async getFileById(
+    @Req() req: { user: User },
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.filesService.getFileById(id, req.user);
   }
 
   @Get(':id/download')

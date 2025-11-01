@@ -11,6 +11,7 @@ import { User } from '../../users/entity/user.entity';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum FileUploadStatus {
+  PENDING = 'PENDING',
   ACTIVE = 'ACTIVE',
   SOFT_DELETED = 'SOFT_DELETED',
 }
@@ -49,10 +50,6 @@ export class FileUpload {
   @ApiProperty({ description: 'Stored MIME type' })
   @Column({ name: 'mime_type' })
   mimeType: string;
-
-  @ApiPropertyOptional({ description: 'SHA-256 checksum of original file' })
-  @Column({ name: 'checksum_sha256', type: 'varchar', nullable: true })
-  checksumSha256?: string | null;
 
   @ApiProperty({ enum: FileUploadStatus, default: FileUploadStatus.ACTIVE })
   @Column({

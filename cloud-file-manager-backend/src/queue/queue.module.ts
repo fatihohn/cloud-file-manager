@@ -1,7 +1,10 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
-import { USER_EVENTS_QUEUE } from './queue.constants';
+import {
+  S3_UPLOAD_NOTIFICATIONS_QUEUE,
+  USER_EVENTS_QUEUE,
+} from './queue.constants';
 import { RedisOptions } from 'ioredis';
 
 @Global()
@@ -67,9 +70,14 @@ import { RedisOptions } from 'ioredis';
         };
       },
     }),
-    BullModule.registerQueue({
-      name: USER_EVENTS_QUEUE,
-    }),
+    BullModule.registerQueue(
+      {
+        name: USER_EVENTS_QUEUE,
+      },
+      {
+        name: S3_UPLOAD_NOTIFICATIONS_QUEUE,
+      },
+    ),
   ],
   exports: [BullModule],
 })

@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
-  InternalServerErrorException,
   NotFoundException,
   PayloadTooLargeException,
   Inject,
@@ -13,22 +12,17 @@ import { FileUpload, FileUploadStatus } from './entities/file-upload.entity';
 import { User, UserRole } from '../users/entity/user.entity';
 import { UsersService } from '../users/users.service';
 import { FILES_S3_CLIENT } from './files.constants';
-import {
-  DeleteObjectCommand,
-  GetObjectCommand,
-  S3Client,
-} from '@aws-sdk/client-s3';
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID, createHash, createCipheriv, randomBytes } from 'crypto';
+import { randomUUID, createCipheriv, randomBytes } from 'crypto';
 import { LoggerService } from '../logger/logger.service';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { createReadStream, promises as fsPromises } from 'fs';
-import { Upload } from '@aws-sdk/lib-storage';
+import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { FileUploadResponseDto } from './dto/file-upload-response.dto';
 import { ListFilesQueryDto } from './dto/list-files-query.dto';
-import { PresignedUrlResponseDto } from './dto/presigned-url-response.dto';
 import { FILE_ERRORS, FILE_RESPONSES } from './files.errors';
-import type { Express } from 'express';
+import { CreatePresignedUrlDto } from './dto/create-presigned-url.dto';
+import { CreatePresignedUploadUrlResponseDto } from './dto/create-presigned-upload-url-response.dto';
 
 @Injectable()
 export class FilesService {
@@ -37,8 +31,6 @@ export class FilesService {
   private readonly downloadUrlTtlSeconds: number;
   private readonly encryptionKey: Buffer;
   private readonly allowedMimeTypes = ['text/csv', 'application/vnd.ms-excel'];
-  private readonly uploadPartSize: number;
-  private readonly uploadQueueSize: number;
 
   constructor(
     @InjectRepository(FileUpload)
@@ -58,15 +50,7 @@ export class FilesService {
       10,
     );
     this.downloadUrlTtlSeconds = parseInt(
-      this.configService.get<string>('FILES_DOWNLOAD_URL_TTL_SECONDS', '60'),
-      10,
-    );
-    this.uploadPartSize = parseInt(
-      this.configService.get<string>('FILES_MULTIPART_PART_SIZE', '8388608'),
-      10,
-    );
-    this.uploadQueueSize = parseInt(
-      this.configService.get<string>('FILES_MULTIPART_QUEUE', '4'),
+      this.configService.get<string>('FILES_DOWNLOAD_URL_TTL_SECONDS', '300'),
       10,
     );
     const encryptionKeyBase64 = this.configService.get<string>(
@@ -84,23 +68,47 @@ export class FilesService {
     this.encryptionKey = key;
   }
 
-  async uploadMany(
+  async createPresignedUploadUrls(
     user: User,
-    files: Express.Multer.File[],
-  ): Promise<FileUploadResponseDto[]> {
-    await this.ensureUserExists(user.id);
-    if (!files || files.length === 0) {
-      throw new BadRequestException(FILE_ERRORS.NO_FILES);
+    createDtos: CreatePresignedUrlDto[],
+  ): Promise<CreatePresignedUploadUrlResponseDto[]> {
+    const response: CreatePresignedUploadUrlResponseDto[] = [];
+
+    for (const dto of createDtos) {
+      this.validateFile({ mimetype: dto.contentType, size: dto.size });
+
+      const fileId = randomUUID();
+      const s3Key = `${user.id}/${fileId}/${dto.fileName}`;
+
+      const record = this.filesRepository.create({
+        id: fileId,
+        ownerId: user.id,
+        originalName: dto.fileName,
+        encryptedName: this.encryptFileName(dto.fileName),
+        s3Key,
+        mimeType: dto.contentType,
+        status: FileUploadStatus.PENDING,
+        sizeBytes: '0', // Will be updated by worker
+      });
+      await this.filesRepository.save(record);
+
+      const { url, fields } = await createPresignedPost(this.s3, {
+        Bucket: this.bucket,
+        Key: s3Key,
+        Conditions: [
+          ['content-length-range', 0, this.maxUploadBytes],
+          { 'Content-Type': dto.contentType },
+        ],
+        Fields: {
+          'Content-Type': dto.contentType,
+        },
+        Expires: this.downloadUrlTtlSeconds,
+      });
+
+      response.push({ fileId, url, fields });
     }
 
-    const results: FileUpload[] = [];
-    for (const file of files) {
-      this.validateFile(file);
-      const uploaded = await this.uploadSingle(user, file);
-      results.push(uploaded);
-    }
-
-    return results.map((file) => this.toResponseDto(file));
+    return response;
   }
 
   async listUserFiles(
@@ -131,10 +139,18 @@ export class FilesService {
     };
   }
 
+  async getFileById(
+    fileId: string,
+    user: User,
+  ): Promise<FileUploadResponseDto> {
+    const file = await this.getOwnedFileOrThrow(fileId, user);
+    return this.toResponseDto(file);
+  }
+
   async generateDownloadUrl(
     fileId: string,
     user: User,
-  ): Promise<PresignedUrlResponseDto> {
+  ): Promise<{ url: string; expiresAt: string }> {
     const file = await this.getOwnedFileOrThrow(fileId, user);
 
     const command = new GetObjectCommand({
@@ -165,8 +181,8 @@ export class FilesService {
     };
   }
 
-  private validateFile(file: Express.Multer.File) {
-    if (file.size > this.maxUploadBytes) {
+  private validateFile(file: { mimetype: string; size?: number }) {
+    if (file.size && file.size > this.maxUploadBytes) {
       throw new PayloadTooLargeException({
         code: FILE_ERRORS.UPLOAD_TOO_LARGE.code,
         message: FILE_ERRORS.UPLOAD_TOO_LARGE.message(this.maxUploadBytes),
@@ -175,57 +191,6 @@ export class FilesService {
     const mimeType = file.mimetype ?? '';
     if (!this.allowedMimeTypes.includes(mimeType)) {
       throw new BadRequestException(FILE_ERRORS.UNSUPPORTED_FILE_TYPE);
-    }
-    if (!file.path) {
-      throw new BadRequestException(FILE_ERRORS.FILE_PATH_MISSING);
-    }
-  }
-
-  private async uploadSingle(user: User, file: Express.Multer.File) {
-    const s3Key = `${user.id}/${randomUUID()}`;
-    const filePath = file.path;
-    if (!filePath) {
-      throw new InternalServerErrorException(FILE_ERRORS.FILE_PATH_MISSING);
-    }
-    const checksum = await this.computeChecksum(filePath);
-    const originalName = String(file.originalname ?? 'file.csv');
-    const encryptedName = this.encryptFileName(originalName);
-
-    try {
-      await this.uploadStreamToS3({
-        filePath,
-        s3Key,
-        mimeType: file.mimetype ?? 'application/octet-stream',
-        contentLength: file.size,
-      });
-    } catch (error) {
-      this.logger.error('S3 upload failed', String(error));
-      throw new InternalServerErrorException(FILE_ERRORS.S3_UPLOAD_FAILED);
-    } finally {
-      await this.removeTempFile(filePath);
-    }
-
-    const record = this.filesRepository.create({
-      ownerId: user.id,
-      originalName,
-      encryptedName,
-      s3Key,
-      sizeBytes: String(file.size),
-      mimeType: file.mimetype,
-      checksumSha256: checksum,
-    });
-
-    try {
-      return await this.filesRepository.save(record);
-    } catch (error) {
-      await this.safeDeleteS3Object(s3Key);
-      if (this.isForeignKeyError(error)) {
-        throw new ForbiddenException(FILE_ERRORS.USER_NOT_FOUND);
-      }
-      this.logger.error('Failed to persist file metadata', String(error));
-      throw new InternalServerErrorException(
-        FILE_ERRORS.FILE_METADATA_SAVE_FAILED,
-      );
     }
   }
 
@@ -242,6 +207,8 @@ export class FilesService {
 
   private async getOwnedFileOrThrow(fileId: string, user: User) {
     const file = await this.filesRepository.findOne({ where: { id: fileId } });
+
+    // For security, throw NotFound for both missing files and unauthorized access
     if (!file || file.status === FileUploadStatus.SOFT_DELETED) {
       throw new NotFoundException(FILE_ERRORS.FILE_NOT_FOUND);
     }
@@ -249,8 +216,9 @@ export class FilesService {
     const isOwner = file.ownerId === user.id;
     const isAdmin = user.role === UserRole.ADMIN;
     if (!isOwner && !isAdmin) {
-      throw new ForbiddenException(FILE_ERRORS.FORBIDDEN_RESOURCE);
+      throw new NotFoundException(FILE_ERRORS.FILE_NOT_FOUND);
     }
+
     return file;
   }
 
@@ -264,77 +232,6 @@ export class FilesService {
       createdAt: file.createdAt.toISOString(),
       ownerId: file.ownerId,
     };
-  }
-
-  private async ensureUserExists(userId: string) {
-    const existing = await this.usersService.findOneById(userId);
-    if (!existing) {
-      throw new ForbiddenException(FILE_ERRORS.USER_NOT_FOUND);
-    }
-  }
-
-  private async computeChecksum(filePath: string): Promise<string> {
-    const hash = createHash('sha256');
-    await new Promise<void>((resolve, reject) => {
-      createReadStream(filePath)
-        .on('data', (chunk) => hash.update(chunk))
-        .on('end', () => resolve())
-        .on('error', (error) => reject(error));
-    });
-    return hash.digest('hex');
-  }
-
-  private async uploadStreamToS3(options: {
-    filePath: string;
-    s3Key: string;
-    mimeType: string;
-    contentLength: number;
-  }) {
-    const { filePath, s3Key, mimeType, contentLength } = options;
-    const upload = new Upload({
-      client: this.s3,
-      params: {
-        Bucket: this.bucket,
-        Key: s3Key,
-        Body: createReadStream(filePath),
-        ContentType: mimeType,
-        ContentLength: contentLength,
-        ServerSideEncryption: 'AES256',
-      },
-      partSize: this.uploadPartSize,
-      queueSize: this.uploadQueueSize,
-    });
-    await upload.done();
-  }
-
-  private async removeTempFile(filePath: string) {
-    try {
-      await fsPromises.unlink(filePath);
-    } catch (error) {
-      this.logger.warn('Failed to remove temp upload file', String(error));
-    }
-  }
-
-  private async safeDeleteS3Object(key: string) {
-    try {
-      await this.s3.send(
-        new DeleteObjectCommand({
-          Bucket: this.bucket,
-          Key: key,
-        }),
-      );
-    } catch (error) {
-      this.logger.warn('Failed to cleanup orphaned S3 object', String(error));
-    }
-  }
-
-  private isForeignKeyError(error: unknown): boolean {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      (error as { code: string }).code === '23503'
-    );
   }
 
   private createListQueryBuilder(query: ListFilesQueryDto) {
