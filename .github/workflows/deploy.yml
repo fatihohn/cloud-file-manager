@@ -60,7 +60,7 @@ jobs:
             --region ${{ secrets.AWS_REGION }})\n          echo "instance_ids=$INSTANCE_IDS" >> $GITHUB_OUTPUT
 
       - name: Run SSM Command to Update and Restart Containers
-        uses: aws-actions/aws-ssm-run-command@v1
+        uses: aws-actions/ssm-run-command@v1
         with:
           instance-ids: ${{ steps.get_instance_ids.outputs.instance_ids }}
           document-name: AWS-RunShellScript
