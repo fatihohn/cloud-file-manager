@@ -57,7 +57,7 @@ jobs:
                       "Name=instance-state-name,Values=running" \
             --query "Reservations[*].Instances[*].InstanceId" \
             --output text \
-            --region ${{ secrets.AWS_REGION }})\n          echo "Retrieved Instance IDs: $INSTANCE_IDS"
+            --region ${{ secrets.AWS_REGION }})
           echo "instance_ids=$INSTANCE_IDS" >> $GITHUB_OUTPUT
 
       - name: Run SSM Command to Update and Restart Containers
