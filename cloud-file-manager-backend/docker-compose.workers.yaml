@@ -1,0 +1,30 @@
+services:
+  users-worker:
+    image: ${ECR_REPO_URL}:latest
+    container_name: cloud-file-manager-backend-users-worker
+    restart: always
+    env_file:
+      - ./.env
+    environment:
+      - MODE=users-worker
+    logging:
+      driver: "awslogs"
+      options:
+        awslogs-region: "${AWS_REGION}"
+        awslogs-group: "${LOG_GROUP_NAME}"
+        awslogs-stream-prefix: "users-worker"
+
+  files-worker:
+    image: ${ECR_REPO_URL}:latest
+    container_name: cloud-file-manager-backend-files-worker
+    restart: always
+    env_file:
+      - ./.env
+    environment:
+      - MODE=files-worker
+    logging:
+      driver: "awslogs"
+      options:
+        awslogs-region: "${AWS_REGION}"
+        awslogs-group: "${LOG_GROUP_NAME}"
+        awslogs-stream-prefix: "files-worker"

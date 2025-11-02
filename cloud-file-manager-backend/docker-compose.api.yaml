@@ -1,0 +1,17 @@
+services:
+  api:
+    image: ${ECR_REPO_URL}:latest
+    container_name: cloud-file-manager-backend-api
+    restart: always
+    env_file:
+      - ./.env
+    environment:
+      - MODE=api
+    ports:
+      - "3000:3000"
+    logging:
+      driver: "awslogs"
+      options:
+        awslogs-region: "${AWS_REGION}"
+        awslogs-group: "${LOG_GROUP_NAME}"
+        awslogs-stream-prefix: "api"
