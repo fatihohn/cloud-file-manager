@@ -31,6 +31,10 @@ async function bootstrap() {
     .setVersion('1.0')
     .addBearerAuth()
     .addApiKey({ type: 'apiKey', name: 'x-api-key', in: 'header' }, 'x-api-key')
+    .addServer(
+      'https://2hvnsx9ntl.execute-api.ap-northeast-2.amazonaws.com/dev',
+      'Development Server',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
