@@ -17,9 +17,17 @@ jobs:
       ecr_repository_url: ${{ steps.output.outputs.ecr_repository_url }}
     steps:
       # Your steps to create ECR and set output
-      - name: Set ECR Output
+      - name: Set Terraform Outputs
         id: output
-        run: echo "ecr_repository_url=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/cloud-file-manager-backend" >> $GITHUB_OUTPUT
+        run: |
+          ECR_REPO_URL=$(terraform output -raw ecr_repository_url)
+          echo "$ECR_REPO_URL" > ecr_repository_url.txt
+
+      - name: Upload ECR Repository URL Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecr-repository-url
+          path: ecr_repository_url.txt
 
   build-and-push-docker:
     name: "Build and Push Docker Image"
@@ -35,6 +43,11 @@ jobs:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-role
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Download ECR Repository URL Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ecr-repository-url
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -42,11 +55,11 @@ jobs:
       - name: Build, tag, and push image to Amazon ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ needs.terraform-ecr.outputs.ecr_repository_url }}
+          ECR_REPOSITORY_FROM_FILE: $(cat ecr_repository_url.txt)
           IMAGE_TAG: latest
         run: |
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG -f cloud-file-manager-backend/Dockerfile .
-          docker push $ECR_REPOSITORY:$IMAGE_TAG
+          docker build -t $ECR_REPOSITORY_FROM_FILE:$IMAGE_TAG -f cloud-file-manager-backend/Dockerfile .
+          docker push $ECR_REPOSITORY_FROM_FILE:$IMAGE_TAG
 
   terraform-apply:
     name: "Terraform Apply"
