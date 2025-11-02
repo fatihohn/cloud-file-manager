@@ -33,3 +33,8 @@ variable "azs" {
   type        = list(string)
   default     = ["ap-northeast-2a", "ap-northeast-2b"]
 }
+
+variable "aws_region" {
+  description = "The AWS region where resources are deployed."
+  type        = string
+}
