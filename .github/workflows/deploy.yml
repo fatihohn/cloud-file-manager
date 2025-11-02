@@ -52,7 +52,7 @@ jobs:
         id: get_instance_ids
         run: |
           INSTANCE_IDS=$(aws ec2 describe-instances \
-            --filters "Name=tag:Project,Values=${{ secrets.PROJECT_NAME }}" \
+            --filters "Name=tag:Project,Values=${{ secrets.PROJECT_NAME }}*" \
                       "Name=tag:Environment,Values=${{ secrets.ENVIRONMENT }}" \
                       "Name=instance-state-name,Values=running" \
             --query "Reservations[*].Instances[*].InstanceId" \
