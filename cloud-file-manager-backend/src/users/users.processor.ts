@@ -51,8 +51,6 @@ export class UserEventProcessor extends WorkerHost {
       jobId: job.id,
       userId,
     });
-
-    await job.updateProgress(100);
   }
 
   private async handleUserSoftDeleted(userId: string): Promise<void> {

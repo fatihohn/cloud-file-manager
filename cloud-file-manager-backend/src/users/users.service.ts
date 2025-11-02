@@ -91,7 +91,7 @@ export class UsersService {
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.findOneById(id);
     if (!user) {
-      throw new ConflictException({
+      throw new NotFoundException({
         code: USER_ERRORS.NOT_FOUND.code,
         message: USER_ERRORS.NOT_FOUND.message(id),
       });
@@ -132,6 +132,18 @@ export class UsersService {
   }
 
   async remove(id: string): Promise<{ message: string; code: string }> {
+    const user = await this.findOneById(id);
+    if (!user) {
+      throw new NotFoundException({
+        code: USER_ERRORS.NOT_FOUND.code,
+        message: USER_ERRORS.NOT_FOUND.message(id),
+      });
+    }
+    await this._dropCachedUser(user);
+    await this.usersRepository.update(
+      { id },
+      { currentHashedRefreshToken: null },
+    );
     const result = await this.usersRepository.softDelete(id);
     if (result.affected === 0) {
       throw new NotFoundException({
