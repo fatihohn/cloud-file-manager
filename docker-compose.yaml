@@ -76,9 +76,9 @@ services:
     networks:
       - cloud_file_manager_network
 
-  worker:
+  users-worker:
     image: node:22-alpine
-    container_name: cloud-file-manager-backend-worker
+    container_name: cloud-file-manager-backend-users-worker
     working_dir: /app
     env_file:
       - .env
@@ -86,7 +86,7 @@ services:
       - CHOKIDAR_USEPOLLING=1
       - WATCHPACK_POLLING=true
       - MODE=worker
-    command: sh -lc "npm install && npm run start:worker:dev"
+    command: sh -lc "npm install && npm run start:users:worker:dev"
     volumes:
       - ./logs/cloud-file-manager-backend:/app/log
       - ./cloud-file-manager-backend:/app

@@ -1,9 +1,9 @@
 import { NestFactory } from '@nestjs/core';
-import { WorkerAppModule } from './worker-app.module';
+import { UsersWorkerAppModule } from './users-worker-app.module';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 
 async function bootstrap() {
-  const app = await NestFactory.createApplicationContext(WorkerAppModule, {
+  const app = await NestFactory.createApplicationContext(UsersWorkerAppModule, {
     bufferLogs: true,
   });
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));

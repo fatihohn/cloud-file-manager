@@ -29,4 +29,4 @@ import { RedisModule } from '@liaoliaots/nestjs-redis';
     UsersWorkerModule,
   ],
 })
-export class WorkerAppModule {}
+export class UsersWorkerAppModule {}
