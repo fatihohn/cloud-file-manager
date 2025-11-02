@@ -15,9 +15,14 @@ import {
 } from '@aws-sdk/client-s3';
 import { createReadStream, existsSync, statSync } from 'fs';
 import { join } from 'path';
+import { UsersWorkerAppModule } from '../src/users-worker-app.module';
+import { FilesWorkerAppModule } from '../src/files-worker-app.module';
+import { UserEventProcessor } from '../src/users/users.processor';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication;
+  let usersWorkerApp: INestApplication;
+  let filesWorkerApp: INestApplication;
   let adminToken: string;
   let memberToken: string;
 
@@ -35,11 +40,23 @@ describe('AppController (e2e)', () => {
   };
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+    // Initialize main app, users worker app, and files worker app
+    const appModuleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
+    const usersWorkerAppModuleFixture: TestingModule =
+      await Test.createTestingModule({
+        imports: [UsersWorkerAppModule],
+      }).compile();
+    const filewWorkerAppModuleFixture: TestingModule =
+      await Test.createTestingModule({
+        imports: [FilesWorkerAppModule],
+      }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = appModuleFixture.createNestApplication();
+    usersWorkerApp = usersWorkerAppModuleFixture.createNestApplication();
+    filesWorkerApp = filewWorkerAppModuleFixture.createNestApplication();
+
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -47,11 +64,32 @@ describe('AppController (e2e)', () => {
         transform: true,
       }),
     );
+
+    usersWorkerApp.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
+
+    filesWorkerApp.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
+
     await app.init();
+    await usersWorkerApp.init();
+    await filesWorkerApp.init();
   });
 
   afterAll(async () => {
     await app.close();
+    await usersWorkerApp.close();
+    await filesWorkerApp.close();
   });
 
   it('/ (GET)', () => {
@@ -189,7 +227,7 @@ describe('AppController (e2e)', () => {
     }, 20000); // Increase timeout for S3 uploads
 
     it('should verify file status as ACTIVE after S3 events', async () => {
-      const s3EventProcessor = app.get(S3EventProcessor);
+      const s3EventProcessor = filesWorkerApp.get(S3EventProcessor);
       for (let i = 0; i < testFiles.length; i++) {
         const file = testFiles[i];
         const data = presignedData[i];
@@ -318,7 +356,7 @@ describe('AppController (e2e)', () => {
           Body: createReadStream(fileToUpload.path),
         }),
       );
-      const s3EventProcessor = app.get(S3EventProcessor);
+      const s3EventProcessor = filesWorkerApp.get(S3EventProcessor);
       await s3EventProcessor.process({
         data: {
           Records: [
@@ -376,14 +414,14 @@ describe('AppController (e2e)', () => {
     let tempMemberToken: string;
     let tempMemberId: string;
     let tempMemberFileId: string;
+    const tempMemberUser = {
+      email: `temp-member-${Date.now()}@test.com`,
+      password: 'Sup3rSecure!4',
+      name: 'TempMember',
+    };
 
     beforeAll(async () => {
       // Create a temporary member
-      const tempMemberUser = {
-        email: `temp-member-${Date.now()}@test.com`,
-        password: 'Sup3rSecure!4',
-        name: 'TempMember',
-      };
       const signupRes = await request(app.getHttpServer() as App)
         .post('/signup')
         .send(tempMemberUser)
@@ -398,7 +436,7 @@ describe('AppController (e2e)', () => {
         .expect(201);
       tempMemberToken = signinRes.body.accessToken;
 
-      // Upload a file as member1
+      // Upload a file as tempMember
       const fileToUpload = {
         name: 'temp_member_file.csv',
         contentType: 'text/csv',
@@ -428,7 +466,7 @@ describe('AppController (e2e)', () => {
           Body: createReadStream(fileToUpload.path),
         }),
       );
-      const s3EventProcessor = app.get(S3EventProcessor);
+      const s3EventProcessor = filesWorkerApp.get(S3EventProcessor);
       await s3EventProcessor.process({
         data: {
           Records: [
@@ -454,21 +492,26 @@ describe('AppController (e2e)', () => {
           );
         });
 
-      // Wait for background job to process
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const userEventProcessor = usersWorkerApp.get(UserEventProcessor);
+      const mockUserEvent = {
+        data: {
+          userId: tempMemberId,
+        },
+      };
+
+      await userEventProcessor.process(mockUserEvent as any);
 
       // Verify that signin fails afterwards
       await request(app.getHttpServer() as App)
         .post('/signin')
         .send({
-          email: `temp-member-${Date.now()}@test.com`,
-          password: 'Sup3rSecure!4',
+          email: tempMemberUser.email,
+          password: tempMemberUser.password,
         })
         .expect(401);
-    });
 
-    // Verify that the user's files are also soft-deleted
-    it("should verify that the deleted member's files are soft-deleted", async () => {
+      await new Promise((r) => setTimeout(r, 1000)); // Wait for async processing
+      // Verify that the user's files are also soft-deleted
       await request(app.getHttpServer() as App)
         .get(`/files/${tempMemberFileId}`)
         .set('Authorization', `Bearer ${adminToken}`)
