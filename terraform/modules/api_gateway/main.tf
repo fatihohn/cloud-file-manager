@@ -33,6 +33,16 @@ resource "aws_api_gateway_method" "root_method" {
   api_key_required = true
 }
 
+resource "aws_api_gateway_integration" "proxy_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.proxy.id
+  http_method             = aws_api_gateway_method.proxy_method.http_method
+  integration_http_method = "ANY"
+  type                    = "HTTP_PROXY"
+  connection_type         = "INTERNET"
+  uri                     = "http://${var.alb_dns_name}/{proxy}" # ALB DNS name with proxy path
+}
+
 resource "aws_api_gateway_integration" "root_integration" {
   rest_api_id             = aws_api_gateway_rest_api.main.id
   resource_id             = aws_api_gateway_rest_api.main.root_resource_id
@@ -43,14 +53,52 @@ resource "aws_api_gateway_integration" "root_integration" {
   uri                     = "http://${var.alb_dns_name}"
 }
 
-resource "aws_api_gateway_integration" "proxy_integration" {
+resource "aws_api_gateway_resource" "docs" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "docs"
+}
+
+resource "aws_api_gateway_method" "docs_get_method" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.docs.id
+  http_method   = "GET"
+  authorization = "NONE"
+  api_key_required = false # API Key not required for docs
+}
+
+resource "aws_api_gateway_integration" "docs_get_integration" {
   rest_api_id             = aws_api_gateway_rest_api.main.id
-  resource_id             = aws_api_gateway_resource.proxy.id
-  http_method             = aws_api_gateway_method.proxy_method.http_method
+  resource_id             = aws_api_gateway_resource.docs.id
+  http_method             = aws_api_gateway_method.docs_get_method.http_method
+  integration_http_method = "GET"
+  type                    = "HTTP_PROXY"
+  connection_type         = "INTERNET"
+  uri                     = "http://${var.alb_dns_name}/docs"
+}
+
+resource "aws_api_gateway_resource" "docs_proxy" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.docs.id
+  path_part   = "{proxy+}"
+}
+
+resource "aws_api_gateway_method" "docs_proxy_method" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.docs_proxy.id
+  http_method   = "ANY"
+  authorization = "NONE"
+  api_key_required = false # API Key not required for docs sub-paths
+}
+
+resource "aws_api_gateway_integration" "docs_proxy_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.docs_proxy.id
+  http_method             = aws_api_gateway_method.docs_proxy_method.http_method
   integration_http_method = "ANY"
   type                    = "HTTP_PROXY"
   connection_type         = "INTERNET"
-  uri                     = "http://${var.alb_dns_name}/{proxy}" # ALB DNS name with proxy path
+  uri                     = "http://${var.alb_dns_name}/docs/{proxy}"
 }
 
 resource "aws_api_gateway_deployment" "main" {
@@ -62,6 +110,10 @@ resource "aws_api_gateway_deployment" "main" {
       root_method_settings = aws_api_gateway_method.root_method
       integration_settings = aws_api_gateway_integration.proxy_integration
       root_integration_settings = aws_api_gateway_integration.root_integration
+      docs_method_settings = aws_api_gateway_method.docs_get_method
+      docs_integration_settings = aws_api_gateway_integration.docs_get_integration
+      docs_proxy_method_settings = aws_api_gateway_method.docs_proxy_method
+      docs_proxy_integration_settings = aws_api_gateway_integration.docs_proxy_integration
     }))
   }
 
@@ -72,8 +124,12 @@ resource "aws_api_gateway_deployment" "main" {
   depends_on = [
     aws_api_gateway_integration.proxy_integration,
     aws_api_gateway_integration.root_integration,
+    aws_api_gateway_integration.docs_get_integration,
+    aws_api_gateway_integration.docs_proxy_integration,
     aws_api_gateway_method.proxy_method,
     aws_api_gateway_method.root_method,
+    aws_api_gateway_method.docs_get_method,
+    aws_api_gateway_method.docs_proxy_method,
   ]
 }
 
