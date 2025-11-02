@@ -7,7 +7,7 @@ services:
       - ./.env
     environment:
       - MODE=users-worker
-      - PORT=3001
+      - PORT=3000
       - NODE_ENV=production
     logging:
       driver: "awslogs"
@@ -24,7 +24,7 @@ services:
       - ./.env
     environment:
       - MODE=files-worker
-      - PORT=3002
+      - PORT=3001
       - NODE_ENV=production
     logging:
       driver: "awslogs"

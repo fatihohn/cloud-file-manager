@@ -1,6 +1,11 @@
 output "application_url" {
-  description = "The URL of the deployed web application."
-  value       = "http://${module.alb.alb_dns_name}"
+  description = "The URL of the application load balancer."
+  value       = module.alb.alb_dns_name
+}
+
+output "api_gateway_invoke_url" {
+  description = "The invoke URL of the API Gateway stage."
+  value       = module.api_gateway.invoke_url
 }
 
 output "ecr_repository_url" {

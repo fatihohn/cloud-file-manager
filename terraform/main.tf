@@ -72,13 +72,20 @@ module "iam" {
 }
 
 module "alb" {
-  source            = "./modules/alb"
-  project_name      = var.project_name
-  environment       = var.environment
-  vpc_id            = module.vpc.vpc_id
-  public_subnets    = module.vpc.public_subnet_ids
-  instance_ids      = module.ec2_api.instance_ids
-  health_check_path = "/health"
+  source        = "./modules/alb"
+  project_name  = var.project_name
+  environment   = var.environment
+  vpc_id        = module.vpc.vpc_id
+  public_subnets = module.vpc.public_subnets[*].id
+  instance_ids  = concat(module.ec2_api.instance_ids, module.ec2_workers.instance_ids)
+  aws_region    = var.aws_region
+}
+
+module "api_gateway" {
+  source             = "./modules/api_gateway"
+  project_name       = var.project_name
+  environment        = var.environment
+  alb_dns_name       = module.alb.alb_dns_name
 }
 
 resource "aws_security_group" "app_sg" {

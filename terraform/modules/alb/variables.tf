@@ -28,3 +28,8 @@ variable "health_check_path" {
   type        = string
   default     = "/health"
 }
+
+variable "aws_region" {
+  description = "The AWS region where resources are deployed."
+  type        = string
+}

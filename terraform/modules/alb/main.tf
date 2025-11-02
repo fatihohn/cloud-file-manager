@@ -12,22 +12,15 @@ resource "aws_lb" "main" {
 }
 
 resource "aws_security_group" "alb_sg" {
-  name        = "${var.project_name}-${var.environment}-alb-sg"
-  description = "Security group for the ALB"
+  name        = "${var.project_name}-${var.environment}-alb-sg-v2"
+  description = "Security group for ALB"
   vpc_id      = var.vpc_id
 
   ingress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = data.aws_ip_ranges.api_gateway.cidr_blocks
   }
 
   egress {
@@ -38,9 +31,13 @@ resource "aws_security_group" "alb_sg" {
   }
 
   tags = {
-    Project     = var.project_name
-    Environment = var.environment
+    Name = "${var.project_name}-${var.environment}-alb-sg"
   }
+}
+
+data "aws_ip_ranges" "api_gateway" {
+  regions = [var.aws_region]
+  services = ["API_GATEWAY"]
 }
 
 resource "aws_lb_target_group" "main" {
@@ -50,7 +47,7 @@ resource "aws_lb_target_group" "main" {
   vpc_id   = var.vpc_id
 
   health_check {
-    path                = var.health_check_path
+    path                = "/"
     protocol            = "HTTP"
     matcher             = "200"
     interval            = 30
