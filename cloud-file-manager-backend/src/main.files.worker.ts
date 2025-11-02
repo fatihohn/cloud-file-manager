@@ -1,16 +1,16 @@
 import { NestFactory } from '@nestjs/core';
-import { UsersWorkerAppModule } from './users-worker-app.module';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+import { FilesWorkerAppModule } from './files-worker-app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.createApplicationContext(UsersWorkerAppModule, {
+  const app = await NestFactory.createApplicationContext(FilesWorkerAppModule, {
     bufferLogs: true,
   });
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
   const shutdown = async (signal: string) => {
     const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
-    logger.log(`Received ${signal}, closing users worker context`);
+    logger.log(`Received ${signal}, closing files worker context`);
     await app.close();
     process.exit(0);
   };

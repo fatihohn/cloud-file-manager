@@ -85,8 +85,33 @@ services:
     environment:
       - CHOKIDAR_USEPOLLING=1
       - WATCHPACK_POLLING=true
-      - MODE=worker
+      - MODE=users-worker
     command: sh -lc "npm install && npm run start:users:worker:dev"
+    volumes:
+      - ./logs/cloud-file-manager-backend:/app/log
+      - ./cloud-file-manager-backend:/app
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - cloud_file_manager_network
+
+  files-worker:
+    image: node:22-alpine
+    container_name: cloud-file-manager-backend-files-worker
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      - CHOKIDAR_USEPOLLING=1
+      - WATCHPACK_POLLING=true
+      - MODE=files-worker
+    command: sh -lc "npm install && npm run start:files:worker:dev"
     volumes:
       - ./logs/cloud-file-manager-backend:/app/log
       - ./cloud-file-manager-backend:/app

@@ -8,7 +8,6 @@ import { FILES_S3_CLIENT } from './files.constants';
 import { S3Client } from '@aws-sdk/client-s3';
 import { UsersModule } from '../users/users.module';
 import { AuthModule } from '../auth/auth.module';
-import { S3EventProcessor } from './files.processor';
 import { QueueModule } from '../queue/queue.module';
 
 @Module({
@@ -21,7 +20,6 @@ import { QueueModule } from '../queue/queue.module';
   ],
   providers: [
     FilesService,
-    S3EventProcessor,
     {
       provide: FILES_S3_CLIENT,
       inject: [ConfigService],
