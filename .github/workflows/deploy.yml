@@ -81,31 +81,7 @@ jobs:
           -backend-config="region=${{ secrets.AWS_REGION }}" \
           -backend-config="dynamodb_table=${{ secrets.PROJECT_NAME }}-${{ secrets.ENVIRONMENT }}-terraform-locks"
 
-      - name: Check and Import ECR Repository if Exists
-        id: check_import_ecr
-        run: |
-          REPO_NAME="${{ secrets.PROJECT_NAME }}-backend"
-          
-          if aws ecr describe-repositories --repository-names $REPO_NAME --region ${{ secrets.AWS_REGION }} > /dev/null 2>&1; then
-            echo "ECR repository $REPO_NAME already exists. Importing into Terraform state."
-            terraform import module.ecr.aws_ecr_repository.app_repository $REPO_NAME
-          else
-            echo "ECR repository $REPO_NAME does not exist. Terraform will create it."
-          fi
-
-      - name: Debug TF_VAR Environment Variables
-        run: |
-          echo "TF_VAR_project_name: $TF_VAR_project_name"
-          echo "TF_VAR_environment: $TF_VAR_environment"
-          echo "TF_VAR_aws_region: $TF_VAR_aws_region"
-          echo "TF_VAR_db_username: $TF_VAR_db_username"
-        env:
-          TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
-          TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
-          TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
-          TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
-
-      - name: Terraform Apply All
+      - name: Terraform Apply EC2 with Replace
         env:
           TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
           TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
@@ -117,7 +93,7 @@ jobs:
           echo "jwt_refresh_secret = \"${{ secrets.JWT_REFRESH_SECRET }}\"" >> terraform.tfvars.tmp
           echo "file_name_encryption_key = \"${{ secrets.FILE_NAME_ENCRYPTION_KEY }}\"" >> terraform.tfvars.tmp
           
-          terraform apply -auto-approve -var-file=terraform.tfvars.tmp
+          terraform apply -auto-approve -var-file=terraform.tfvars.tmp terraform apply -replace="module.ec2_api.aws_instance.app_instance[0]" -replace="module.ec2_workers.aws_instance.app_instance[0]"
           rm terraform.tfvars.tmp
 
       - name: Set Terraform Outputs
