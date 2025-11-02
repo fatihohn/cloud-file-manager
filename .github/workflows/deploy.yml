@@ -74,7 +74,7 @@ jobs:
             --instance-ids ${INSTANCE_IDS_ARRAY[@]} \
             --document-name AWS-RunShellScript \
             --comment "Update Docker image and restart containers" \
-            --parameters commands="[\"sudo docker pull ${{ steps.get_ecr_url.outputs.ECR_REPO_URL }}:latest\", \"sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.api.yaml pull\", \"sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.api.yaml up -d --remove-orphans\", \"sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.workers.yaml pull\", \"sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.workers.yaml up -d --remove-orphans\"]" \
+            --parameters commands="[\"sudo docker pull ${{ steps.get_ecr_url.outputs.ECR_REPO_URL }}:latest\", \"sudo /usr/local/bin/docker-compose -f /home/ec2-user/app/docker-compose.yaml pull\", \"sudo /usr/local/bin/docker-compose -f /home/ec2-user/app/docker-compose.yaml up -d --remove-orphans\"]" \
             --region ${{ secrets.AWS_REGION }} \
             --query "Command.CommandId" --output text)
           
