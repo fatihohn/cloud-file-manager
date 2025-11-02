@@ -40,7 +40,15 @@ jobs:
         run: terraform init
 
       - name: Terraform Apply ECR
-        run: terraform apply -auto-approve -target=module.ecr
+        run: terraform apply -auto-approve -target=module.ecr \
+          -var="project_name=${{ secrets.PROJECT_NAME }}" \
+          -var="environment=${{ secrets.ENVIRONMENT }}" \
+          -var="aws_region=${{ secrets.AWS_REGION }}" \
+          -var="db_username=${{ secrets.DB_USERNAME }}" \
+          -var="db_password=${{ secrets.DB_PASSWORD }}" \
+          -var="jwt_access_secret=${{ secrets.JWT_ACCESS_SECRET }}" \
+          -var="jwt_refresh_secret=${{ secrets.JWT_REFRESH_SECRET }}" \
+          -var="file_name_encryption_key=${{ secrets.FILE_NAME_ENCRYPTION_KEY }}"
 
       - name: Set Terraform Outputs
         id: output
@@ -101,10 +109,22 @@ jobs:
           terraform_version: 1.8.5
 
       - name: Terraform Init
-        run: terraform init
+        run: terraform init \
+          -backend-config="bucket=${{ secrets.PROJECT_NAME }}-${{ secrets.ENVIRONMENT }}-terraform-state" \
+          -backend-config="key=${{ secrets.PROJECT_NAME }}/${{ secrets.ENVIRONMENT }}/terraform.tfstate" \
+          -backend-config="region=${{ secrets.AWS_REGION }}" \
+          -backend-config="dynamodb_table=${{ secrets.PROJECT_NAME }}-${{ secrets.ENVIRONMENT }}-terraform-locks"
 
       - name: Terraform Apply All
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve \
+          -var="project_name=${{ secrets.PROJECT_NAME }}" \
+          -var="environment=${{ secrets.ENVIRONMENT }}" \
+          -var="aws_region=${{ secrets.AWS_REGION }}" \
+          -var="db_username=${{ secrets.DB_USERNAME }}" \
+          -var="db_password=${{ secrets.DB_PASSWORD }}" \
+          -var="jwt_access_secret=${{ secrets.JWT_ACCESS_SECRET }}" \
+          -var="jwt_refresh_secret=${{ secrets.JWT_REFRESH_SECRET }}" \
+          -var="file_name_encryption_key=${{ secrets.FILE_NAME_ENCRYPTION_KEY }}"
 
       - name: Set Terraform Outputs
         id: output
