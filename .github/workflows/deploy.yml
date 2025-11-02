@@ -60,15 +60,21 @@ jobs:
             --region ${{ secrets.AWS_REGION }})\n          echo "instance_ids=$INSTANCE_IDS" >> $GITHUB_OUTPUT
 
       - name: Run SSM Command to Update and Restart Containers
-        uses: aws-actions/ssm-run-command@v1
-        with:
-          instance-ids: ${{ steps.get_instance_ids.outputs.instance_ids }}
-          document-name: AWS-RunShellScript
-          comment: "Update Docker image and restart containers"
-          parameters: |
-            commands:
-              - "sudo docker pull ${{ steps.get_ecr_url.outputs.ECR_REPO_URL }}:latest"
-              - "sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.api.yaml pull"
-              - "sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.api.yaml up -d --remove-orphans"
-              - "sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.workers.yaml pull"
-              - "sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.workers.yaml up -d --remove-orphans"
+        run: |
+          INSTANCE_IDS_ARRAY=(${INSTANCES_IDS})
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids ${INSTANCE_IDS_ARRAY[@]} \
+            --document-name AWS-RunShellScript \
+            --comment "Update Docker image and restart containers" \
+            --parameters commands="[\"sudo docker pull ${{ steps.get_ecr_url.outputs.ECR_REPO_URL }}:latest\", \"sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.api.yaml pull\", \"sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.api.yaml up -d --remove-orphans\", \"sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.workers.yaml pull\", \"sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.workers.yaml up -d --remove-orphans\"]" \
+            --region ${{ secrets.AWS_REGION }} \
+            --query "Command.CommandId" --output text)
+
+          echo "SSM Command ID: $COMMAND_ID"
+
+          aws ssm wait command-executed \
+            --command-id $COMMAND_ID \
+            --instance-id ${INSTANCE_IDS_ARRAY[0]} \
+            --region ${{ secrets.AWS_REGION }}
+
+          echo "SSM Command completed."
