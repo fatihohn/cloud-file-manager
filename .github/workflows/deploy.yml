@@ -50,19 +50,18 @@ jobs:
           else
             echo "ECR repository $REPO_NAME does not exist. Terraform will create it."
           fi
-        continue-on-error: true
 
       - name: Terraform Apply ECR
-        run: |
-          terraform apply -auto-approve -target=module.ecr \
-            -var="project_name=${{ secrets.PROJECT_NAME }}" \
-            -var="environment=${{ secrets.ENVIRONMENT }}" \
-            -var="aws_region=${{ secrets.AWS_REGION }}" \
-            -var="db_username=${{ secrets.DB_USERNAME }}" \
-            -var="db_password=${{ secrets.DB_PASSWORD }}" \
-            -var="jwt_access_secret=${{ secrets.JWT_ACCESS_SECRET }}" \
-            -var="jwt_refresh_secret=${{ secrets.JWT_REFRESH_SECRET }}" \
-            -var="file_name_encryption_key=${{ secrets.FILE_NAME_ENCRYPTION_KEY }}"
+        env:
+          TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+          TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
+          TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+          TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+          TF_VAR_jwt_access_secret: ${{ secrets.JWT_ACCESS_SECRET }}
+          TF_VAR_jwt_refresh_secret: ${{ secrets.JWT_REFRESH_SECRET }}
+          TF_VAR_file_name_encryption_key: ${{ secrets.FILE_NAME_ENCRYPTION_KEY }}
+        run: terraform apply -auto-approve -target=module.ecr
 
       - name: Set Terraform Outputs
         id: output
@@ -104,8 +103,6 @@ jobs:
       run:
         shell: bash
         working-directory: ./terraform
-    outputs:
-      application_url: ${{ steps.output.outputs.application_url }}
 
     steps:
       - name: Checkout
@@ -126,16 +123,17 @@ jobs:
         run: terraform init
 
       - name: Terraform Apply All
+        env:
+          TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+          TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
+          TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+          TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+          TF_VAR_jwt_access_secret: ${{ secrets.JWT_ACCESS_SECRET }}
+          TF_VAR_jwt_refresh_secret: ${{ secrets.JWT_REFRESH_SECRET }}
+          TF_VAR_file_name_encryption_key: ${{ secrets.FILE_NAME_ENCRYPTION_KEY }}
         run: |
-          terraform apply -auto-approve \
-            -var="project_name=${{ secrets.PROJECT_NAME }}" \
-            -var="environment=${{ secrets.ENVIRONMENT }}" \
-            -var="aws_region=${{ secrets.AWS_REGION }}" \
-            -var="db_username=${{ secrets.DB_USERNAME }}" \
-            -var="db_password=${{ secrets.DB_PASSWORD }}" \
-            -var="jwt_access_secret=${{ secrets.JWT_ACCESS_SECRET }}" \
-            -var="jwt_refresh_secret=${{ secrets.JWT_REFRESH_SECRET }}" \
-            -var="file_name_encryption_key=${{ secrets.FILE_NAME_ENCRYPTION_KEY }}"
+          terraform apply -auto-approve
 
       - name: Set Terraform Outputs
         id: output
