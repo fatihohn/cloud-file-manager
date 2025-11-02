@@ -81,7 +81,108 @@ jobs:
           -backend-config="region=${{ secrets.AWS_REGION }}" \
           -backend-config="dynamodb_table=${{ secrets.PROJECT_NAME }}-${{ secrets.ENVIRONMENT }}-terraform-locks"
 
-      - name: Terraform Apply EC2 with Replace
+      - name: Check and Import Existing Resources
+        id: check_import_resources
+        env:
+          PROJECT_NAME: ${{ secrets.PROJECT_NAME }}
+          ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -e
+          
+          # CloudWatch Log Group
+          LOG_GROUP_NAME="/aws/ec2/${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}"
+          if aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP_NAME" --query "logGroups[?logGroupName==`$LOG_GROUP_NAME`].logGroupName" --output text --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "CloudWatch Log Group $LOG_GROUP_NAME already exists. Importing."
+            terraform import aws_cloudwatch_log_group.app_log_group "$LOG_GROUP_NAME"
+          else
+            echo "CloudWatch Log Group $LOG_GROUP_NAME does not exist. Terraform will create it."
+          fi
+
+          # Secrets Manager Secrets
+          ACCESS_SECRET_NAME="${{ env.ENVIRONMENT }}/jwt/accessSecret"
+          if aws secretsmanager describe-secret --secret-id "$ACCESS_SECRET_NAME" --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "Secrets Manager Secret $ACCESS_SECRET_NAME already exists. Importing."
+            terraform import aws_secretsmanager_secret.jwt_access_secret "$ACCESS_SECRET_NAME"
+          else
+            echo "Secrets Manager Secret $ACCESS_SECRET_NAME does not exist. Terraform will create it."
+          fi
+
+          REFRESH_SECRET_NAME="${{ env.ENVIRONMENT }}/jwt/refreshSecret"
+          if aws secretsmanager describe-secret --secret-id "$REFRESH_SECRET_NAME" --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "Secrets Manager Secret $REFRESH_SECRET_NAME already exists. Importing."
+            terraform import aws_secretsmanager_secret.jwt_refresh_secret "$REFRESH_SECRET_NAME"
+          else
+            echo "Secrets Manager Secret $REFRESH_SECRET_NAME does not exist. Terraform will create it."
+          fi
+
+          FILE_ENCRYPTION_KEY_NAME="${{ env.ENVIRONMENT }}/file/encryptionKey"
+          if aws secretsmanager describe-secret --secret-id "$FILE_ENCRYPTION_KEY_NAME" --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "Secrets Manager Secret $FILE_ENCRYPTION_KEY_NAME already exists. Importing."
+            terraform import aws_secretsmanager_secret.file_encryption_key "$FILE_ENCRYPTION_KEY_NAME"
+          else
+            echo "Secrets Manager Secret $FILE_ENCRYPTION_KEY_NAME does not exist. Terraform will create it."
+          fi
+
+          # ELBv2 Load Balancer (ALB)
+          ALB_NAME="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-alb"
+          if aws elbv2 describe-load-balancers --names "$ALB_NAME" --query "LoadBalancers[0].LoadBalancerArn" --output text --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            ALB_ARN=$(aws elbv2 describe-load-balancers --names "$ALB_NAME" --query "LoadBalancers[0].LoadBalancerArn" --output text --region ${{ env.AWS_REGION }})
+            echo "ALB $ALB_NAME already exists. Importing."
+            terraform import module.alb.aws_lb.main "$ALB_ARN"
+          else
+            echo "ALB $ALB_NAME does not exist. Terraform will create it."
+          fi
+
+          # ELBv2 Target Group
+          TG_NAME="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-tg"
+          if aws elbv2 describe-target-groups --names "$TG_NAME" --query "TargetGroups[0].TargetGroupArn" --output text --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            TG_ARN=$(aws elbv2 describe-target-groups --names "$TG_NAME" --query "TargetGroups[0].TargetGroupArn" --output text --region ${{ env.AWS_REGION }})
+            echo "Target Group $TG_NAME already exists. Importing."
+            terraform import module.alb.aws_lb_target_group.main "$TG_ARN"
+          else
+            echo "Target Group $TG_NAME does not exist. Terraform will create it."
+          fi
+
+          # ElastiCache Subnet Group
+          ELASTICACHE_SUBNET_GROUP_NAME="${{ env.PROJECT_NAME }}-subnet-group"
+          if aws elasticache describe-cache-subnet-groups --cache-subnet-group-name "$ELASTICACHE_SUBNET_GROUP_NAME" --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "ElastiCache Subnet Group $ELASTICACHE_SUBNET_GROUP_NAME already exists. Importing."
+            terraform import module.elasticache.aws_elasticache_subnet_group.main "$ELASTICACHE_SUBNET_GROUP_NAME"
+          else
+            echo "ElastiCache Subnet Group $ELASTICACHE_SUBNET_GROUP_NAME does not exist. Terraform will create it."
+          fi
+
+          # IAM Role
+          IAM_ROLE_NAME="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ec2-role"
+          if aws iam get-role --role-name "$IAM_ROLE_NAME" --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "IAM Role $IAM_ROLE_NAME already exists. Importing."
+            terraform import module.iam.aws_iam_role.ec2_role "$IAM_ROLE_NAME"
+          else
+            echo "IAM Role $IAM_ROLE_NAME does not exist. Terraform will create it."
+          fi
+
+          # RDS DB Subnet Group
+          RDS_SUBNET_GROUP_NAME="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-rds-subnet-group"
+          if aws rds describe-db-subnet-groups --db-subnet-group-name "$RDS_SUBNET_GROUP_NAME" --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "RDS DB Subnet Group $RDS_SUBNET_GROUP_NAME already exists. Importing."
+            terraform import module.rds.aws_db_subnet_group.main "$RDS_SUBNET_GROUP_NAME"
+          else
+            echo "RDS DB Subnet Group $RDS_SUBNET_GROUP_NAME does not exist. Terraform will create it."
+          fi
+
+          # S3 Bucket
+          S3_BUCKET_NAME="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-uploads-bucket"
+          if aws s3api head-bucket --bucket "$S3_BUCKET_NAME" --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "S3 Bucket $S3_BUCKET_NAME already exists. Importing."
+            terraform import module.s3.aws_s3_bucket.main "$S3_BUCKET_NAME"
+          else
+            echo "S3 Bucket $S3_BUCKET_NAME does not exist. Terraform will create it."
+          fi
+
+          echo "Finished checking and importing existing resources."
+
+      - name: Terraform Apply All
         env:
           TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
           TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
