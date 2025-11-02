@@ -58,7 +58,14 @@ jobs:
             --query "Reservations[*].Instances[*].InstanceId" \
             --output text \
             --region ${{ secrets.AWS_REGION }})
-          echo "instance_ids=$INSTANCE_IDS" >> $GITHUB_OUTPUT
+
+          echo "Retrieved Instance IDs: $INSTANCE_IDS"
+
+          {
+            echo "instance_ids<<EOF"
+            echo "$INSTANCE_IDS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Run SSM Command to Update and Restart Containers
         run: |
