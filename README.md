@@ -10,7 +10,8 @@ The system runs as a collection of services orchestrated by Docker Compose:
 
 - **Nginx:** A reverse proxy that routes incoming traffic on port `80` to the backend API.
 - **Backend API (`cloud-file-manager-backend-api`):** The core NestJS application that handles user authentication, file metadata, and generating presigned URLs.
-- **Backend Worker (`cloud-file-manager-backend-worker`):** A separate NestJS application instance that processes asynchronous background jobs from a Redis-backed queue (e.g., cascading soft-deletes).
+- **Users Worker (`cloud-file-manager-backend-users-worker`):** A separate NestJS application instance that processes asynchronous background jobs related to users from a Redis-backed queue (e.g., user-related tasks).
+- **Files Worker (`cloud-file-manager-backend-files-worker`):** A separate NestJS application instance that processes asynchronous background jobs related to files from a Redis-backed queue (e.g., file processing, cascading soft-deletes).
 - **PostgreSQL:** The primary database for storing user and file metadata.
 - **Redis:** Used as a message broker for the BullMQ job queue.
 
