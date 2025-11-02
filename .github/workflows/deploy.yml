@@ -93,7 +93,7 @@ jobs:
           echo "jwt_refresh_secret = \"${{ secrets.JWT_REFRESH_SECRET }}\"" >> terraform.tfvars.tmp
           echo "file_name_encryption_key = \"${{ secrets.FILE_NAME_ENCRYPTION_KEY }}\"" >> terraform.tfvars.tmp
           
-          terraform apply -auto-approve -var-file=terraform.tfvars.tmp terraform apply -replace="module.ec2_api.aws_instance.app_instance[0]" -replace="module.ec2_workers.aws_instance.app_instance[0]"
+          terraform apply -auto-approve -var-file=terraform.tfvars.tmp -replace="module.ec2_api.aws_instance.app_instance[0]" -replace="module.ec2_workers.aws_instance.app_instance[0]"
           rm terraform.tfvars.tmp
 
       - name: Set Terraform Outputs
