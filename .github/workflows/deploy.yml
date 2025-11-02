@@ -105,21 +105,22 @@ jobs:
           TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
           TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
 
-      - name: Terraform Apply ECR
+      - name: Terraform Apply All
         env:
           TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
           TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
           TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
           TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
-          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-          TF_VAR_jwt_access_secret: ${{ secrets.JWT_ACCESS_SECRET }}
-          TF_VAR_jwt_refresh_secret: ${{ secrets.JWT_REFRESH_SECRET }}
-          TF_VAR_file_name_encryption_key: ${{ secrets.FILE_NAME_ENCRYPTION_KEY }}
         run: |
-          terraform apply -auto-approve -target=module.ecr
+          echo "db_password = \"${{ secrets.DB_PASSWORD }}\"" > terraform.tfvars.tmp
+          echo "jwt_access_secret = \"${{ secrets.JWT_ACCESS_SECRET }}\"" >> terraform.tfvars.tmp
+          echo "jwt_refresh_secret = \"${{ secrets.JWT_REFRESH_SECRET }}\"" >> terraform.tfvars.tmp
+          echo "file_name_encryption_key = \"${{ secrets.FILE_NAME_ENCRYPTION_KEY }}\"" >> terraform.tfvars.tmp
+          
+          terraform apply -auto-approve -var-file=terraform.tfvars.tmp
+          rm terraform.tfvars.tmp
 
       - name: Set Terraform Outputs
         id: output
         run: |
-          ECR_REPO_URL=$(terraform output -raw ecr_repository_url)
-          echo "$ECR_REPO_URL" > ecr_repository_url.txt
+          echo "application_url=$(terraform output -raw application_url)" >> $GITHUB_OUTPUT
