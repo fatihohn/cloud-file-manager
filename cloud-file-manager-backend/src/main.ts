@@ -37,7 +37,6 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document, {
     swaggerOptions: {
       persistAuthorization: true,
-      basePath: process.env.NODE_ENV === 'production' ? '/dev' : '/',
     },
   });
 
