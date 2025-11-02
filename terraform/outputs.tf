@@ -27,3 +27,8 @@ output "aws_region" {
   description = "The AWS region where resources are deployed."
   value       = var.aws_region
 }
+
+output "instance_ids" {
+  description = "The IDs of the deployed EC2 instances."
+  value       = concat(module.ec2_api.instance_ids, module.ec2_workers.instance_ids)
+}
