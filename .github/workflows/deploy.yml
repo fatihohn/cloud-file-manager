@@ -16,7 +16,9 @@ jobs:
     outputs:
       ecr_repository_url: ${{ steps.output.outputs.ecr_repository_url }}
     steps:
-      # Your steps to create ECR and set output
+      - name: Debug PATH
+        run: echo $PATH
+
       - name: Set Terraform Outputs
         id: output
         run: |
