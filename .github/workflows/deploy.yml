@@ -39,6 +39,19 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
+      - name: Check and Import ECR Repository if Exists
+        id: check_import_ecr
+        run: |
+          REPO_NAME="${{ secrets.PROJECT_NAME }}-backend"
+          
+          if aws ecr describe-repositories --repository-names $REPO_NAME --region ${{ secrets.AWS_REGION }} > /dev/null 2>&1; then
+            echo "ECR repository $REPO_NAME already exists. Importing into Terraform state."
+            terraform import module.ecr.aws_ecr_repository.app_repository $REPO_NAME
+          else
+            echo "ECR repository $REPO_NAME does not exist. Terraform will create it."
+          fi
+        continue-on-error: true
+
       - name: Terraform Apply ECR
         run: |
           terraform apply -auto-approve -target=module.ecr \
