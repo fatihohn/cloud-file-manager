@@ -19,7 +19,7 @@ jobs:
       # Your steps to create ECR and set output
       - name: Set ECR Output
         id: output
-        run: echo "ecr_repository_url=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com/cloud-file-manager-backend" >> $GITHUB_OUTPUT
+        run: echo "ecr_repository_url=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/cloud-file-manager-backend" >> $GITHUB_OUTPUT
 
   build-and-push-docker:
     name: "Build and Push Docker Image"
