@@ -72,7 +72,7 @@ jobs:
         with:
           terraform_version: 1.8.5
       - name: Terraform Init
-        run: \
+        run: |
           terraform init \
           -backend-config="bucket=${{ secrets.PROJECT_NAME }}-${{ secrets.ENVIRONMENT }}-terraform-state" \
           -backend-config="key=${{ secrets.PROJECT_NAME }}/${{ secrets.ENVIRONMENT }}/terraform.tfstate" \
@@ -110,7 +110,7 @@ jobs:
           parameters: |
             commands:
               - "sudo docker pull ${{ steps.get_ecr_url.outputs.ECR_REPO_URL }}:latest"
-              - "sudo docker-compose -f /home/ec2-user/docker-compose.api.yaml pull"
-              - "sudo docker-compose -f /home/ec2-user/docker-compose.api.yaml up -d --remove-orphans"
-              - "sudo docker-compose -f /home/ec2-user/docker-compose.workers.yaml pull"
-              - "sudo docker-compose -f /home/ec2-user/docker-compose.workers.yaml up -d --remove-orphans"
+              - "sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.api.yaml pull"
+              - "sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.api.yaml up -d --remove-orphans"
+              - "sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.workers.yaml pull"
+              - "sudo /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.workers.yaml up -d --remove-orphans"
