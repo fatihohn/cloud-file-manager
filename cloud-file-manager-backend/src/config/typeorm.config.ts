@@ -11,6 +11,9 @@ export const createTypeOrmOptions = (
   username: configService.get<string>('POSTGRES_USER'),
   password: configService.get<string>('POSTGRES_PASSWORD'),
   database: configService.get<string>('POSTGRES_DATABASE'),
+  ...(configService.get<string>('DATABASE_SSL') === 'true' && {
+    ssl: { rejectUnauthorized: false },
+  }),
   entities: [
     join(
       __dirname,

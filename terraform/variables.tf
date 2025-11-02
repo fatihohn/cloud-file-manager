@@ -4,6 +4,12 @@ variable "project_name" {
   default     = "cloud-file-manager"
 }
 
+variable "vpc_cidr" {
+  description = "The CIDR block for the VPC."
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
 variable "environment" {
   description = "The environment name (e.g., dev, prod)."
   type        = string
@@ -62,4 +68,46 @@ variable "file_name_encryption_key" {
   description = "A base64-encoded 32-byte key for encrypting file names."
   type        = string
   sensitive   = true
+}
+
+variable "bullmq_attempts" {
+  description = "Number of attempts for BullMQ jobs."
+  type        = number
+  default     = 3
+}
+
+variable "bullmq_backoff_delay" {
+  description = "Backoff delay for BullMQ jobs in milliseconds."
+  type        = number
+  default     = 1000
+}
+
+variable "bullmq_remove_on_complete" {
+  description = "Number of jobs to keep after completion."
+  type        = number
+  default     = 50
+}
+
+variable "bullmq_remove_on_fail" {
+  description = "Number of jobs to keep after failure."
+  type        = number
+  default     = 100
+}
+
+variable "redis_port" {
+  description = "The port for the Redis server."
+  type        = number
+  default     = 6379
+}
+
+variable "max_upload_bytes" {
+  description = "Maximum upload size in bytes."
+  type        = number
+  default     = 1073741824
+}
+
+variable "files_download_url_ttl_seconds" {
+  description = "TTL for file download presigned URLs in seconds."
+  type        = number
+  default     = 300
 }

@@ -7,12 +7,14 @@ services:
       - ./.env
     environment:
       - MODE=users-worker
+      - PORT=3001
+      - NODE_ENV=production
     logging:
       driver: "awslogs"
       options:
         awslogs-region: "${AWS_REGION}"
         awslogs-group: "${LOG_GROUP_NAME}"
-        awslogs-stream-prefix: "users-worker"
+        awslogs-stream: "users-worker"
 
   files-worker:
     image: ${ECR_REPO_URL}:latest
@@ -22,9 +24,11 @@ services:
       - ./.env
     environment:
       - MODE=files-worker
+      - PORT=3002
+      - NODE_ENV=production
     logging:
       driver: "awslogs"
       options:
         awslogs-region: "${AWS_REGION}"
         awslogs-group: "${LOG_GROUP_NAME}"
-        awslogs-stream-prefix: "files-worker"
+        awslogs-stream: "files-worker"

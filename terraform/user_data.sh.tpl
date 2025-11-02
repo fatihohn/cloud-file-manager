@@ -28,16 +28,31 @@ FILE_NAME_ENCRYPTION_KEY=$(aws secretsmanager get-secret-value --secret-id ${fil
 cat <<EOF > .env
 # Database
 DATABASE_HOST=${db_host}
-DATABASE_USERNAME=${db_username}
-DATABASE_PASSWORD='${db_password}'
+DATABASE_PORT=5432
+POSTGRES_USER=${db_username}
+POSTGRES_PASSWORD='${db_password}'
+POSTGRES_DATABASE=${db_name}
+DATABASE_SSL=true
 
 # Redis
 REDIS_HOST=${redis_host}
+REDIS_PORT=${redis_port}
 
 # S3
 FILES_BUCKET_NAME=${s3_bucket_name}
 FILE_NAME_ENCRYPTION_KEY=$FILE_NAME_ENCRYPTION_KEY
 AWS_SQS_UPLOAD_QUEUE_URL=${sqs_queue_url}
+
+# BullMQ
+BULLMQ_ATTEMPTS=${bullmq_attempts}
+BULLMQ_BACKOFF_DELAY=${bullmq_backoff_delay}
+BULLMQ_REMOVE_ON_COMPLETE=${bullmq_remove_on_complete}
+BULLMQ_REMOVE_ON_FAIL=${bullmq_remove_on_fail}
+
+# File Uploads
+MAX_UPLOAD_BYTES=${max_upload_bytes}
+FILES_DOWNLOAD_URL_TTL_SECONDS=${files_download_url_ttl_seconds}
+
 
 # JWT
 JWT_ACCESS_SECRET=$JWT_ACCESS_SECRET
@@ -55,7 +70,7 @@ ${docker_compose_content}
 EOF
 
 # Login to ECR
-aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_repo_url}
+sudo aws ecr get-login-password --region ${aws_region} | sudo docker login --username AWS --password-stdin ${ecr_repo_url}
 
 # Run Docker Compose
-docker compose -f docker-compose.yaml up -d
+sudo /usr/local/bin/docker-compose -f docker-compose.yaml up -d

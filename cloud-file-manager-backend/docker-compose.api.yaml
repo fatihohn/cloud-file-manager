@@ -7,6 +7,8 @@ services:
       - ./.env
     environment:
       - MODE=api
+      - PORT=3000
+      - NODE_ENV=production
     ports:
       - "3000:3000"
     logging:
@@ -14,4 +16,4 @@ services:
       options:
         awslogs-region: "${AWS_REGION}"
         awslogs-group: "${LOG_GROUP_NAME}"
-        awslogs-stream-prefix: "api"
+        awslogs-stream: "api"

@@ -126,6 +126,15 @@ module "ec2_api" {
     jwt_refresh_expiration = var.jwt_refresh_expiration,
     file_encryption_key_arn = aws_secretsmanager_secret.file_encryption_key.arn,
     sqs_queue_url           = module.sqs.queue_url,
+    db_name                 = var.db_name,
+    redis_port              = var.redis_port,
+    bullmq_attempts         = var.bullmq_attempts,
+    bullmq_backoff_delay    = var.bullmq_backoff_delay,
+    bullmq_remove_on_complete = var.bullmq_remove_on_complete,
+    bullmq_remove_on_fail   = var.bullmq_remove_on_fail,
+    max_upload_bytes             = var.max_upload_bytes,
+    files_download_url_ttl_seconds = var.files_download_url_ttl_seconds,
+
     docker_compose_content = templatefile("../cloud-file-manager-backend/docker-compose.api.yaml", {
       ECR_REPO_URL   = module.ecr.repository_url,
       AWS_REGION     = var.aws_region,
@@ -159,6 +168,14 @@ module "ec2_workers" {
     jwt_refresh_expiration = var.jwt_refresh_expiration,
     file_encryption_key_arn  = aws_secretsmanager_secret.file_encryption_key.arn,
     sqs_queue_url            = module.sqs.queue_url,
+    db_name                  = var.db_name,
+    redis_port               = var.redis_port,
+    bullmq_attempts          = var.bullmq_attempts,
+    bullmq_backoff_delay     = var.bullmq_backoff_delay,
+    bullmq_remove_on_complete  = var.bullmq_remove_on_complete,
+    bullmq_remove_on_fail    = var.bullmq_remove_on_fail,
+    max_upload_bytes             = var.max_upload_bytes,
+    files_download_url_ttl_seconds = var.files_download_url_ttl_seconds,
     docker_compose_content = templatefile("../cloud-file-manager-backend/docker-compose.workers.yaml", {
       ECR_REPO_URL   = module.ecr.repository_url,
       AWS_REGION     = var.aws_region,
@@ -181,8 +198,9 @@ module "rds" {
   project_name            = var.project_name
   environment             = var.environment
   vpc_id                  = module.vpc.vpc_id
-  private_subnets         = module.vpc.private_subnet_ids
-  app_security_group_id   = aws_security_group.app_sg.id
+  private_subnets       = module.vpc.private_subnets[*].id
+  app_security_group_id = aws_security_group.app_sg.id
+  vpc_cidr              = var.vpc_cidr
   db_name                 = var.db_name
   db_username             = var.db_username
   db_password             = var.db_password

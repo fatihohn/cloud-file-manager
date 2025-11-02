@@ -19,7 +19,12 @@ variable "private_subnets" {
 }
 
 variable "app_security_group_id" {
-  description = "The security group ID of the application instances that need to access RDS."
+  description = "The ID of the application security group."
+  type        = string
+}
+
+variable "vpc_cidr" {
+  description = "The CIDR block of the VPC."
   type        = string
 }
 
