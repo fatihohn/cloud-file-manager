@@ -25,6 +25,8 @@ async function bootstrap() {
     }),
   );
 
+  app.enableCors();
+
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Cloud File Manager API')
     .setDescription('API documentation of Cloud File Manager')
