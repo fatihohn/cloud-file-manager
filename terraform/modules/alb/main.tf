@@ -23,6 +23,14 @@ resource "aws_security_group" "alb_sg" {
     cidr_blocks = data.aws_ip_ranges.api_gateway.cidr_blocks
   }
 
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP from anywhere for direct ALB testing"
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
