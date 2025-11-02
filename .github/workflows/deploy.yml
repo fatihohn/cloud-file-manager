@@ -1,5 +1,4 @@
-
-name: 'Terraform CI/CD'
+name: "Terraform CI/CD"
 
 on:
   push:
@@ -11,8 +10,20 @@ permissions:
   id-token: write
 
 jobs:
+  terraform-ecr:
+    name: "Terraform ECR"
+    runs-on: ubuntu-latest
+    outputs:
+      ecr_repository_url: ${{ steps.output.outputs.ecr_repository_url }}
+    steps:
+      # Your steps to create ECR and set output
+      - name: Set ECR Output
+        id: output
+        run: echo "ecr_repository_url=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com/cloud-file-manager-backend" >> $GITHUB_OUTPUT
+
   build-and-push-docker:
-    name: 'Build and Push Docker Image'
+    name: "Build and Push Docker Image"
+    needs: terraform-ecr
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -38,7 +49,7 @@ jobs:
           docker push $ECR_REPOSITORY:$IMAGE_TAG
 
   terraform-apply:
-    name: 'Terraform Apply'
+    name: "Terraform Apply"
     needs: build-and-push-docker
     runs-on: ubuntu-latest
     defaults:
@@ -81,4 +92,3 @@ jobs:
         id: output
         run: |
           echo "application_url=$(terraform output -raw application_url)" >> $GITHUB_OUTPUT
-
