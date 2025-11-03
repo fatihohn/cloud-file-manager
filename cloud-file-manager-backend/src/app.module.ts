@@ -28,6 +28,7 @@ import { createTypeOrmOptions } from './config/typeorm.config';
       config: {
         host: process.env.REDIS_HOST,
         port: Number(process.env.REDIS_PORT),
+        ...(process.env.REDIS_TLS_ENABLED === 'true' && { tls: {} }),
       },
     }),
     ThrottlerModule.forRoot([
