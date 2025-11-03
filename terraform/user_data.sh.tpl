@@ -35,6 +35,9 @@ POSTGRES_PASSWORD='${db_password}'
 POSTGRES_DATABASE=${db_name}
 DATABASE_SSL=true
 
+NODE_ENV=development
+REDIS_TLS_ENABLED=true
+
 # Redis
 REDIS_HOST=${redis_host}
 REDIS_PORT=${redis_port}

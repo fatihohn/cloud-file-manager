@@ -21,6 +21,7 @@ resource "aws_elasticache_replication_group" "main" {
   automatic_failover_enabled    = true
   at_rest_encryption_enabled    = true
   transit_encryption_enabled    = true
+  apply_immediately             = true
 
   tags = {
     Project     = "cloud-file-manager"
