@@ -104,48 +104,37 @@ terraform plan
 terraform apply
 ```
 
-## 4. Accessing the API (via API Gateway with API Key)
+## 4. Accessing the Deployed API
 
-The API is secured using AWS API Gateway, requiring an API Key for all requests. This ensures that only authorized individuals (like project evaluators) can access the API.
+The application is deployed to AWS and is accessible via an Application Load Balancer (ALB).
 
-### For Project Evaluators:
+To access the deployed API and Swagger documentation:
 
-To access the API, you will need two pieces of information:
+1.  **Obtain the Application Load Balancer (ALB) URL:**
+    Run the following command from this `terraform` directory to get the base URL:
 
-1.  **API Gateway Invoke URL**: This is the base URL for the API.
-2.  **API Key Value**: This is a unique key that must be included in every request.
+    ```bash
+    terraform output -raw application_url
+    ```
+    This will output a URL like `http://cloud-file-manager-dev-alb-xxxxxxxxxx.ap-northeast-2.elb.amazonaws.com`.
 
-Your project owner (the user who deployed this infrastructure) will provide you with these values.
+2.  **Access the API:**
+    You can make API calls directly to the ALB URL.
 
-### How to Make an API Call:
+    **Example using `curl`:**
+    Replace `<YOUR_ALB_URL>` with the URL obtained from `terraform output`.
 
-Once you have the **API Gateway Invoke URL** and the **API Key Value**, you must include the API Key in the `x-api-key` HTTP header for every request.
+    ```bash
+    curl -v -X GET \
+      "<YOUR_ALB_URL>/users"
+    ```
 
-**Example using `curl`:**
+3.  **Access Swagger Documentation:**
+    The interactive API documentation (Swagger UI) is available at the `/docs` path relative to the ALB URL.
 
-Replace `<YOUR_API_GATEWAY_INVOKE_URL>` with the provided URL and `<YOUR_API_KEY_VALUE>` with the provided API Key.
-
-```bash
-curl -v -X GET \
-  "<YOUR_API_GATEWAY_INVOKE_URL>/users" \
-  -H "x-api-key: <YOUR_API_KEY_VALUE>"
-```
-
-**Using other tools (e.g., Postman, Insomnia):**
-
-When using graphical API clients, ensure you add a header with the key `x-api-key` and its corresponding value for all your requests.
-
-### For Project Owners (to retrieve credentials):
-
-If you are the project owner, you can retrieve these values by running the following commands from the `terraform` directory after a successful `terraform apply`:
-
-```bash
-# Get the API Gateway Invoke URL
-terraform output -raw api_gateway_invoke_url
-
-# Get the generated API Key
-terraform output -raw api_key_value
-```
+    **Example:**
+    If your ALB URL is `http://<ALB_DNS_NAME>`, then Swagger UI is at `http://<ALB_DNS_NAME>/docs`.
+    You can access this directly in your web browser.
 
 ## 5. Cleanup
 
