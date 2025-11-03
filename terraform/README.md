@@ -2,23 +2,96 @@
 
 This Terraform configuration is designed to deploy and manage the `cloud-file-manager` application on AWS.
 
-## 1. Architecture Overview
+## 1. Infrastructure Architecture
 
-This infrastructure is modularly designed for scalability, security, and maintainability, utilizing the following AWS services:
+This architecture is designed to deploy a scalable and reliable web application on AWS. The main components are:
 
-- **Amazon VPC**: An isolated virtual network environment for the application, configured with public and private subnets. Includes a **NAT Gateway** for outbound internet access from private subnets and **VPC Endpoints (for SSM, S3)** for secure, private access to AWS services.
-- **Amazon ECR**: A private container registry to store the Docker images for the application (API, workers).
-- **Amazon S3**: An object storage service for persistent storage of user-uploaded files.
-- **Amazon RDS (PostgreSQL)**: A managed database service for the application's primary data storage, configured for private access.
-- **Amazon ElastiCache (Redis)**: A high-performance in-memory cache service for session management and caching.
-- **AWS SQS**: A message queuing service used for inter-service communication (e.g., file processing).
-- **AWS IAM**: Provides IAM Roles to grant the EC2 instances secure permissions to access other AWS services like ECR, S3, SQS, and Secrets Manager. Also enables **SSM Session Manager** for secure instance access.
-- **Amazon EC2**: Virtual servers located in private subnets that run the application in Docker containers.
-- **Application Load Balancer (ALB)**: Located in public subnets, it receives HTTP traffic and securely distributes it to the EC2 instances. Its security group is configured to only accept traffic from **AWS API Gateway**.
-- **AWS API Gateway**: Sits in front of the ALB, providing a single entry point for the API. It handles **API Key authentication** and can enforce usage plans.
-- **Amazon CloudWatch Logs**: Centralizes and manages logs from the application running on the EC2 instances.
+1.  **Network (VPC)**: All resources are deployed within an isolated Virtual Private Cloud (VPC). It consists of a **Public Subnet** for external communication and a **Private Subnet** to protect internal resources.
 
-## 2. File Structure
+2.  **Application (EC2 & Docker)**:
+
+    - The application is containerized using Docker and stored in **ECR (Elastic Container Registry)**.
+    - An **API Server** for handling user requests and a **Worker Server** for background tasks are deployed in separate **EC2 Instance** groups within the Private Subnet. This separation of roles enhances stability and scalability.
+    - When EC2 instances launch, a `user_data` script automatically runs Docker Compose to start the application.
+
+3.  **Traffic Management (API Gateway & ALB)**:
+
+    - All user requests enter through an **API Gateway**, a managed service that handles request routing, authentication, rate limiting, etc.
+    - The API Gateway forwards requests to an **ALB (Application Load Balancer)**.
+    - The ALB, located in the Public Subnet, distributes traffic across multiple EC2 API servers in the Private Subnet, ensuring load balancing and high availability.
+
+4.  **Data Storage**:
+
+    - **RDS (Relational Database Service)**: A PostgreSQL database is deployed in the Private Subnet to securely store structured data like user information and file metadata.
+    - **S3 (Simple Storage Service)**: User-uploaded files are stored in an S3 bucket.
+    - **ElastiCache (Redis)**: Used for caching and as a message broker for BullMQ to improve application performance.
+
+5.  **Asynchronous Processing (SQS)**:
+
+    - **SQS (Simple Queue Service)** is used to handle time-consuming tasks like file uploads asynchronously.
+    - The API server enqueues jobs to SQS, and the Worker server dequeues and processes them. This shortens the API server's response time.
+
+6.  **Security & Management**:
+    - **IAM (Identity and Access Management)**: Minimal privilege IAM roles are assigned to AWS resources (e.g., EC2) to securely access other resources (e.g., S3, SQS).
+    - **Secrets Manager**: Sensitive information like database passwords and JWT secrets are securely stored in Secrets Manager and dynamically retrieved at runtime.
+    - **CloudWatch Logs**: All logs from the EC2 instances are centralized and managed in CloudWatch.
+
+## 2. Infrastructure Diagram (Text)
+
+```
++----------------------------------------------------------------------------------------------------------+
+|                                                AWS Cloud                                                 |
+|                                                                                                          |
+|    +----------------+      +--------------------+      +-----------------+      +----------------------+ |
+|    |      ECR       |      |         S3         |      | Secrets Manager |      |   CloudWatch Logs    | |
+|    +----------------+      +--------------------+      +-----------------+      +----------------------+ |
+|            ^                       ^                         ^                          ^                |
+|            | (pull image)          | (r/w files)             | (read secrets)           | (send logs)    |
+|  +---------+-----------------------+-------------------------+--------------------------+------------+   |
+|  |                                          VPC                                                      |   |
+|  | +----------------------------------+      +-----------------------------------------------------+ |   |
+|  | |         Public Subnet            |      |                    Private Subnet                   | |   |
+|  | |                                  |      |                                                     | |   |
+|  | |  +---------------------------+   |      |   +-------------------------------------------+     | |   |
+|  | |  |      Application Load     |   |      |   |            EC2 Auto Scaling Group         |     | |   |
+|  | |  |        Balancer (ALB)     |----------->  |               (API & Workers)             |     | |   |
+|  | |  +---------------------------+   |      |   +-------------------------------------------+     | |   |
+|  | |                                  |      |                        |                            | |   |
+|  | +----------------------------------+      |                        |                            | |   |
+|  |                                           |   +--------------------+--------------------+       | |   |
+|  |                                           |   |                    |                    |       | |   |
+|  |                                           |   v                    v                    v       | |   |
+|  |                                           | +------+         +-------------+         +----+     | |   |
+|  |                                           | | RDS  |         | ElastiCache |         | SQS|     | |   |
+|  |                                           | +------+         |   (Redis)   |         +----+     | |   |
+|  |                                           |                  +-------------+                    | |   |
+|  |                                           |                                                     | |   |
+|  |                                           +-----------------------------------------------------+ |   |
+|  +---------------------------------------------------------------------------------------------------+   |
+|                                                                                                          |
++----------------------------------------------------------------------------------------------------------+
+      ^
+      |
++-----+------------------+
+|   API Gateway          |
++------------------------+
+      ^
+      |
++-----+------+
+|   User     |
++------------+
+```
+
+**Flow Summary:**
+
+1.  **User Request**: `User` -> `API Gateway`
+2.  **Traffic Distribution**: `API Gateway` -> `ALB` -> `EC2 (API)`
+3.  **Application Logic**: The `EC2 (API)` instance communicates with `RDS` and `ElastiCache`, and sends messages to `SQS` if needed.
+4.  **Asynchronous Task**: The `EC2 (Workers)` instance fetches messages from `SQS` and performs tasks like processing files in `S3`.
+5.  **Container Images**: EC2 instances pull Docker images from `ECR` to run the application.
+6.  **Security Credentials**: EC2 instances retrieve sensitive data from `Secrets Manager`.
+
+## 3. File Structure
 
 The Terraform code is organized into modules to promote reusability and maintainability.
 
@@ -37,7 +110,7 @@ The Terraform code is organized into modules to promote reusability and maintain
   - `sqs/`: SQS queue
   - `api_gateway/`: API Gateway for API Key management
 
-## 3. Deployment Procedure
+## 4. Deployment Procedure
 
 ### Prerequisites
 
@@ -69,7 +142,7 @@ db_password = "YOUR_SUPER_SECRET_PASSWORD"
 
 ### Step 2: Build and Push Docker Image (First time or on app update)
 
-The application's Docker image must be built for the `amd64` architecture and pushed to ECR before it can be run by the EC2 instances. This step should be performed manually before `terraform apply`.
+The application\'s Docker image must be built for the `amd64` architecture and pushed to ECR before it can be run by the EC2 instances. This step should be performed manually before `terraform apply`.
 
 ```bash
 # 1. Get the ECR repository information (after ECR is created by terraform apply)
@@ -81,7 +154,7 @@ export AWS_REGION="<YOUR_AWS_REGION>"
 # 2. Log in to ECR
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REPO_URL
 
-# 3. Build the image for amd64 architecture and push to ECR (run from the project's root directory)
+# 3. Build the image for amd64 architecture and push to ECR (run from the project\'s root directory)
 #    Ensure you are in the project root: /path/to/cloud-file-manager
 docker buildx build --platform linux/amd64 -t $REPO_URL:latest -f cloud-file-manager-backend/Dockerfile . --push
 ```
@@ -104,7 +177,9 @@ terraform plan
 terraform apply
 ```
 
-## 4. Accessing the Deployed API
+## 5. Accessing the Deployed API
+
+> **Note on API Gateway and `/docs` access:** While the infrastructure is set up to restrict API access via API Keys through API Gateway, the `application_url` is currently left open (not protected by API Gateway) to allow access to the `/docs` endpoint. This is a temporary measure to address access issues with the Swagger UI.
 
 The application is deployed to AWS and is accessible via an Application Load Balancer (ALB).
 
@@ -116,6 +191,7 @@ To access the deployed API and Swagger documentation:
     ```bash
     terraform output -raw application_url
     ```
+
     This will output a URL like `http://cloud-file-manager-dev-alb-xxxxxxxxxx.ap-northeast-2.elb.amazonaws.com`.
 
 2.  **Access the API:**
@@ -136,7 +212,7 @@ To access the deployed API and Swagger documentation:
     If your ALB URL is `http://<ALB_DNS_NAME>`, then Swagger UI is at `http://<ALB_DNS_NAME>/docs`.
     You can access this directly in your web browser.
 
-## 5. Cleanup
+## 6. Cleanup
 
 To destroy all deployed AWS resources and avoid further charges, run the following command. (Warning: This will permanently delete your data.)
 
