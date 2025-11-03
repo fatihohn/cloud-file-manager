@@ -106,11 +106,38 @@ terraform apply
 
 ## 4. Accessing the API (via API Gateway with API Key)
 
-After `terraform apply` completes successfully, the API will be accessible via the API Gateway Invoke URL. You will need to include an `x-api-key` header with your requests.
+The API is secured using AWS API Gateway, requiring an API Key for all requests. This ensures that only authorized individuals (like project evaluators) can access the API.
 
-### Get API Gateway URL and API Key
+### For Project Evaluators:
 
-Run the following commands from the `terraform` directory:
+To access the API, you will need two pieces of information:
+
+1.  **API Gateway Invoke URL**: This is the base URL for the API.
+2.  **API Key Value**: This is a unique key that must be included in every request.
+
+Your project owner (the user who deployed this infrastructure) will provide you with these values.
+
+### How to Make an API Call:
+
+Once you have the **API Gateway Invoke URL** and the **API Key Value**, you must include the API Key in the `x-api-key` HTTP header for every request.
+
+**Example using `curl`:**
+
+Replace `<YOUR_API_GATEWAY_INVOKE_URL>` with the provided URL and `<YOUR_API_KEY_VALUE>` with the provided API Key.
+
+```bash
+curl -v -X GET \
+  "<YOUR_API_GATEWAY_INVOKE_URL>/users" \
+  -H "x-api-key: <YOUR_API_KEY_VALUE>"
+```
+
+**Using other tools (e.g., Postman, Insomnia):**
+
+When using graphical API clients, ensure you add a header with the key `x-api-key` and its corresponding value for all your requests.
+
+### For Project Owners (to retrieve credentials):
+
+If you are the project owner, you can retrieve these values by running the following commands from the `terraform` directory after a successful `terraform apply`:
 
 ```bash
 # Get the API Gateway Invoke URL
@@ -118,16 +145,6 @@ terraform output -raw api_gateway_invoke_url
 
 # Get the generated API Key
 terraform output -raw api_key_value
-```
-
-### Example API Call
-
-Use `curl` (or Postman/Insomnia) to test your API. Replace `<YOUR_API_GATEWAY_INVOKE_URL>` and `<YOUR_API_KEY_VALUE>` with the actual values obtained from the `terraform output` commands.
-
-```bash
-curl -v -X GET \
-  "<YOUR_API_GATEWAY_INVOKE_URL>/users" \
-  -H "x-api-key: <YOUR_API_KEY_VALUE>"
 ```
 
 ## 5. Cleanup

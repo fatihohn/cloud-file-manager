@@ -45,3 +45,53 @@ This project is designed to be run with Docker. Ensure you have Docker and Docke
 
 - **API Server:** The API is accessible via the Nginx proxy at `http://localhost`.
 - **API Documentation:** Interactive API (Swagger) documentation is available at `http://localhost/docs`.
+
+## AWS Deployment
+
+This application can also be deployed to AWS using Terraform. The AWS deployment leverages services like VPC, EC2, RDS, ElastiCache, S3, SQS, and **API Gateway for secure access with API Keys**.
+
+For detailed deployment instructions and how to manage the AWS infrastructure, please refer to the dedicated [Terraform README](./terraform/README.md).
+
+### Accessing the Deployed API
+
+The application is deployed to AWS and is accessible via an Application Load Balancer (ALB).
+
+To access the deployed API and Swagger documentation:
+
+1.  **Obtain the Application Load Balancer (ALB) URL:**
+
+    Run the following command from the `terraform` directory to get the base URL:
+
+    ```bash
+
+    terraform output -raw application_url
+
+    ```
+
+    This will output a URL like `http://cloud-file-manager-dev-alb-xxxxxxxxxx.ap-northeast-2.elb.amazonaws.com`.
+
+2.  **Access the API:**
+
+    You can make API calls directly to the ALB URL.
+
+    **Example using `curl`:**
+
+    Replace `<YOUR_ALB_URL>` with the URL obtained from `terraform output`.
+
+    ```bash
+
+    curl -v -X GET \
+
+      "<YOUR_ALB_URL>/users"
+
+    ```
+
+3.  **Access Swagger Documentation:**
+
+    The interactive API documentation (Swagger UI) is available at the `/docs` path relative to the ALB URL.
+
+    **Example:**
+
+    If your ALB URL is `http://<ALB_DNS_NAME>`, then Swagger UI is at `http://<ALB_DNS_NAME>/docs`.
+
+    You can access this directly in your web browser.
